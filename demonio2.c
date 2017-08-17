@@ -46,7 +46,7 @@ static void enumerate_usb_mass_storage(struct udev* udev)
             = udev_device_get_parent_with_subsystem_devtype(scsi, "usb", "usb_device");
 
         if (block && scsi_disk && usb) {
-            printf("block = %s, usb = %s:%s, scsi = %s\n",
+            printf("Node = %s\nID vendedor= %s\nID Producto= %s\nInformacion del Fabricante= %s\n",
                    udev_device_get_devnode(block),
                    udev_device_get_sysattr_value(usb, "idVendor"),
                    udev_device_get_sysattr_value(usb, "idProduct"),
