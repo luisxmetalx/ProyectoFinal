@@ -1,9 +1,12 @@
-all: demonio demonio2
+all: deamon WebServer
 
-demonio: demonio.c
-		gcc -Wall -g demonio.c -o demonio -ludev
+#demonio: demonio.c
+#		gcc -Wall -g demonio.c -o demonio -ludev
 
-demonio2: demonio2.c
-		gcc -Wall -g demonio2.c -o demonio2 -ludev
+deamon: deamon.c
+		gcc -Wall -g deamon.c -o deamon -ludev
+
+WebServer: WebServer.c
+		gcc -g -Wall WebServer.c -o WebServer -I$PATH_TO_LIBMHD_INCLUDES  -L$PATH_TO_LIBMHD_LIBS -lmicrohttpd
 clean: 
-		rm -rf demonio demonio2
+		rm -rf deamon WebServer

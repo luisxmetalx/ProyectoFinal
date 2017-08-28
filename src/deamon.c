@@ -1,8 +1,7 @@
 #include <libudev.h>
 #include <stdio.h>
 
-static struct udev_device*
-get_child(struct udev* udev, struct udev_device* parent, const char* subsystem)
+static struct udev_device* get_child(struct udev* udev, struct udev_device* parent, const char* subsystem)
 {
     struct udev_device* child = NULL;
     struct udev_enumerate *enumerate = udev_enumerate_new(udev);
