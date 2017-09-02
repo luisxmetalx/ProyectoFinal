@@ -1,5 +1,10 @@
 #include <libudev.h>
 #include <stdio.h>
+#include <stdlib.h>
+#include <unistd.h>
+#include <sys/types.h>
+#include <sys/stat.h>
+#include <string.h>
 
 static struct udev_device* get_child(struct udev* udev, struct udev_device* parent, const char* subsystem)
 {
@@ -45,11 +50,12 @@ static void enumerate_usb_mass_storage(struct udev* udev)
             = udev_device_get_parent_with_subsystem_devtype(scsi, "usb", "usb_device");
 
         if (block && scsi_disk && usb) {
-            printf("Node = %s\nID vendedor= %s\nID Producto= %s\nInformacion del Fabricante= %s\n",
+            printf("Node = %s\nID vendedor:ID Producto= %s:%s\nInformacion del Fabricante= %s\nTamano: %s\n",
                    udev_device_get_devnode(block),
                    udev_device_get_sysattr_value(usb, "idVendor"),
                    udev_device_get_sysattr_value(usb, "idProduct"),
-                   udev_device_get_sysattr_value(scsi, "vendor"));
+                   udev_device_get_sysattr_value(scsi, "vendor"),
+                   udev_device_get_sysattr_value(scsi, "size"));
         }
 
         if (block) {
@@ -68,10 +74,49 @@ static void enumerate_usb_mass_storage(struct udev* udev)
 
 int main()
 {
-    struct udev* udev = udev_new();
+    pid_t process_id = 0;
+    pid_t sid = 0;
+    // Create child process
+    process_id = fork();
+    // Indication of fork() failure
+    if (process_id < 0)
+    {
+        printf("fork failed!\n");
+        // Return failure in exit status
+        exit(1);
+    }
+    // PARENT PROCESS. Need to kill it.
+    if (process_id > 0)
+    {
+        printf("process_id of child process %d \n", process_id);
+        // return success in exit status
+        exit(0);
+    }
+    //unmask the file mode
+    umask(0);
+    //set new session
+    sid = setsid();
+    if(sid < 0)
+    {
+        // Return failure
+        exit(1);
+    }
+    // Change the current working directory to root.
+    chdir(".");
+    // Close stdin. stdout and stderr
+    close(STDIN_FILENO);
+    close(STDOUT_FILENO);
+    close(STDERR_FILENO);
+    // Open a log file in write mode.
+    while(1)
+    {
+        struct udev* udev = udev_new();
+        
+            enumerate_usb_mass_storage(udev);
+        
+            udev_unref(udev);
 
-    enumerate_usb_mass_storage(udev);
-
-    udev_unref(udev);
+            sleep(5);
+    }
     return 0;
 }

@@ -1,8 +1,4 @@
- 	
-/* Feel free to use this example code in any way
-   you see fit (Public Domain) */
-
-   #include <sys/types.h>
+	 #include <sys/types.h>
    #ifndef _WIN32
    #include <sys/select.h>
    #include <sys/socket.h>
@@ -52,9 +48,7 @@
 	 struct MHD_Response *response;
    
    
-	 response =
-	   MHD_create_response_from_buffer (strlen (page), (void *) page,
-						MHD_RESPMEM_PERSISTENT);
+	 response = MHD_create_response_from_buffer (strlen (page), (void *) page,MHD_RESPMEM_PERSISTENT);
 	 if (!response)
 	   return MHD_NO;
    
