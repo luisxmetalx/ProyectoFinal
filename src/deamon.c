@@ -5,6 +5,16 @@
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <string.h>
+#include<arpa/inet.h>
+#include<sys/socket.h>
+#include<netinet/in.h>
+#include<netdb.h>
+
+#define BUFFSIZE 1
+#define	ERROR	-1
+//declaramos las funciones a usar en el socket
+void recibirArchivo(int SocketFD, FILE *file, char *name);
+void enviarConfirmacion(int SocketFD);
 
 static struct udev_device* get_child(struct udev* udev, struct udev_device* parent, const char* subsystem)
 {
@@ -72,8 +82,30 @@ static void enumerate_usb_mass_storage(struct udev* udev)
     udev_enumerate_unref(enumerate);
 }
 
-int main()
+void recibirArchivo(int SocketFD, FILE *file,char *name){
+	char buffer[BUFFSIZE];
+	int recibido = -1;
+
+	/*Se abre el archivo para escritura*/
+	file = fopen(name,"wb");
+	while((recibido = recv(SocketFD, buffer, BUFFSIZE, 0)) > 0){
+		//printf("%s",buffer);
+		fwrite(buffer,sizeof(char),1,file);
+	}//Termina la recepción del archivo
+	fclose(file);
+}//End recibirArchivo procedure
+
+void enviarConfirmacion(int SocketFD){
+	char mensaje[80] = "Paquete Recibido";
+	printf("\nConfirmación enviada\n");
+	if(write(SocketFD,mensaje,sizeof(mensaje)) == ERROR)
+			perror("Error al enviar la confirmación:");
+}//End enviarConfirmacion
+
+
+int main(int argc, char **argv)
 {
+    /*
     pid_t process_id = 0;
     pid_t sid = 0;
     // Create child process
@@ -106,7 +138,7 @@ int main()
     // Close stdin. stdout and stderr
     close(STDIN_FILENO);
     close(STDOUT_FILENO);
-    close(STDERR_FILENO);
+    close(STDERR_FILENO);*/
     // Open a log file in write mode.
     while(1)
     {
@@ -118,5 +150,64 @@ int main()
 
             sleep(5);
     }
+    // a partir de aqui se iniciliaza el proceso socket
+    struct sockaddr_in stSockAddr;
+	int Res;
+	int SocketFD;
+	int puerto;
+	FILE *archivo;
+
+	if(argc == 1){
+		printf("Uso: ./cliente <ip> <puerto> <directorio a leer> <nombre del archivo>\n");
+		exit(-1);
+	}
+
+	if(argc != 5){
+		printf( "por favor especificar un numero de puerto\n");
+	}
+
+	/*Se crea el socket*/
+	SocketFD = socket(PF_INET, SOCK_STREAM, IPPROTO_TCP);
+    
+	/*Se verifica la integridad del socket*/
+	if (SocketFD == ERROR){
+		perror("cannot create socket");
+		exit(EXIT_FAILURE);
+	}
+
+	/*Se configura la dirección del socket del cliente*/
+	memset(&stSockAddr, 0, sizeof stSockAddr);
+	puerto = atoi(argv[2]);
+	stSockAddr.sin_family = AF_INET;
+	stSockAddr.sin_port = htons(puerto);
+	Res = inet_pton(AF_INET, argv[1], &stSockAddr.sin_addr);
+
+	if (0 > Res){
+		perror("error: El primer parametro no es una familia de direcciónes");
+		close(SocketFD);
+		exit(EXIT_FAILURE);
+	}else if (Res == 0){
+		perror("char string (El segundo parametro no contiene una dirección IP válida");
+		close(SocketFD);
+		exit(EXIT_FAILURE);
+	}
+
+	if (connect(SocketFD, (struct sockaddr *)&stSockAddr, sizeof stSockAddr) == ERROR){
+		perror("Error a la hora de conectarse con el servidor");
+		close(SocketFD);
+		exit(EXIT_FAILURE);
+	}
+
+	printf("Se ha conectado con el servidor:%s\n",(char *)inet_ntoa(stSockAddr.sin_addr));
+	printf("%s\n",argv[3]);
+	if(write(SocketFD,argv[3],sizeof(argv[3])) == ERROR)
+	{
+			perror("Error al enviar la confirmación:");
+	}
+	sleep(5);
+	// se recibe el archivo
+	recibirArchivo(SocketFD,archivo,argv[4]);
+	enviarConfirmacion(SocketFD);
+	close(SocketFD);
     return 0;
 }

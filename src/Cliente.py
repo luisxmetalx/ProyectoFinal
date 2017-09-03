@@ -5,7 +5,9 @@ if requesito.status_code == 200:
     print("exitoso")
 
 d = {"sitio": "Recursos Python", "url": "recursospython.com"}
-res = requests.post("http://127.0.0.1:8888/", data=json.dumps(d))
+
+nuevo={"name":"Nombre"}
+res = requests.post("http://127.0.0.1:8888/", data=json.dumps(nuevo))
 if res.status_code == 200:
     print (res.text)
     print (res.url)
