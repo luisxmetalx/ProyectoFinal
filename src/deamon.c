@@ -1,213 +1,292 @@
-#include <libudev.h>
-#include <stdio.h>
-#include <stdlib.h>
-#include <unistd.h>
-#include <sys/types.h>
+#include <sys/types.h>        
 #include <sys/stat.h>
-#include <string.h>
-#include<arpa/inet.h>
-#include<sys/socket.h>
-#include<netinet/in.h>
-#include<netdb.h>
+#include <stdio.h>          
+#include <stdlib.h>            
+#include <stddef.h>         
+#include <string.h>            
+#include <unistd.h>                  
+#include <netdb.h> 
+#include <errno.h> 
+#include <syslog.h> 
+#include <sys/socket.h> 
+#include <fcntl.h>
+#include <sys/socket.h>
+#include <netinet/in.h>
+#include <arpa/inet.h>
+#include <sys/resource.h>
+#include <libudev.h>
+#include <mntent.h>
+#define BUFERLEN 1024 
+#define BUFF_DISP 100000
+#define QLEN 50 
 
-#define BUFFSIZE 1
-#define	ERROR	-1
-//declaramos las funciones a usar en el socket
-void recibirArchivo(int SocketFD, FILE *file, char *name);
-void enviarConfirmacion(int SocketFD);
+#ifndef HOST_NAME_MAX 
+#define HOST_NAME_MAX 256 
+#endif	
 
-static struct udev_device* get_child(struct udev* udev, struct udev_device* parent, const char* subsystem)
-{
-    struct udev_device* child = NULL;
-    struct udev_enumerate *enumerate = udev_enumerate_new(udev);
+int clienteFd;  
+int SkFd;
+int fd;
 
-    udev_enumerate_add_match_parent(enumerate, parent);
-    udev_enumerate_add_match_subsystem(enumerate, subsystem);
-    udev_enumerate_scan_devices(enumerate);
+struct udev_device* obtenerHijo(struct udev* udev, struct udev_device* padre, const char* subsistema){
+	struct udev_device* son = NULL;
+	struct udev_enumerate *enumerar = udev_enumerate_new(udev);
 
-    struct udev_list_entry *devices = udev_enumerate_get_list_entry(enumerate);
-    struct udev_list_entry *entry;
+	udev_enumerate_add_match_parent(enumerar, padre);
+	udev_enumerate_add_match_subsystem(enumerar, subsistema);
+	udev_enumerate_scan_devices(enumerar);
 
-    udev_list_entry_foreach(entry, devices) {
-        const char *path = udev_list_entry_get_name(entry);
-        child = udev_device_new_from_syspath(udev, path);
-        break;
-    }
-
-    udev_enumerate_unref(enumerate);
-    return child;
+	struct udev_list_entry *dispositivos = udev_enumerate_get_list_entry(enumerar);
+	struct udev_list_entry *entrada;
+	udev_list_entry_foreach(entrada, dispositivos){
+		const char *ruta = udev_list_entry_get_name(entrada);
+		son = udev_device_new_from_syspath(udev, ruta);
+		break;
+	}
+	udev_enumerate_unref(enumerar); 
+	return son;
 }
 
-static void enumerate_usb_mass_storage(struct udev* udev)
-{
-    struct udev_enumerate* enumerate = udev_enumerate_new(udev);
-
-    udev_enumerate_add_match_subsystem(enumerate, "scsi");
-    udev_enumerate_add_match_property(enumerate, "DEVTYPE", "scsi_device");
-    udev_enumerate_scan_devices(enumerate);
-
-    struct udev_list_entry *devices = udev_enumerate_get_list_entry(enumerate);
-    struct udev_list_entry *entry;
-
-    udev_list_entry_foreach(entry, devices) {
-        const char* path = udev_list_entry_get_name(entry);
-        struct udev_device* scsi = udev_device_new_from_syspath(udev, path);
-
-        struct udev_device* block = get_child(udev, scsi, "block");
-        struct udev_device* scsi_disk = get_child(udev, scsi, "scsi_disk");
-
-        struct udev_device* usb
-            = udev_device_get_parent_with_subsystem_devtype(scsi, "usb", "usb_device");
-
-        if (block && scsi_disk && usb) {
-            printf("Node = %s\nID vendedor:ID Producto= %s:%s\nInformacion del Fabricante= %s\nTamano: %s\n",
-                   udev_device_get_devnode(block),
-                   udev_device_get_sysattr_value(usb, "idVendor"),
-                   udev_device_get_sysattr_value(usb, "idProduct"),
-                   udev_device_get_sysattr_value(scsi, "vendor"),
-                   udev_device_get_sysattr_value(scsi, "size"));
-        }
-
-        if (block) {
-            udev_device_unref(block);
-        }
-
-        if (scsi_disk) {
-            udev_device_unref(scsi_disk);
-        }
-
-        udev_device_unref(scsi);
-    }
-
-    udev_enumerate_unref(enumerate);
+int InicializarServidor(int type, const struct sockaddr *addr, socklen_t alen, int qlen){
+	int err = 0;
+	if((fd = socket(addr->sa_family, type, 0)) < 0)
+		return -1;
+	if(bind(fd, addr, alen) < 0)
+		goto errout;
+	if(type == SOCK_STREAM || type == SOCK_SEQPACKET){
+		if(listen(fd, QLEN) < 0)
+			goto errout;
+	}
+	return fd;
+errout:
+	err = errno;
+	close(fd);
+	errno = err;
+	return (-1);
 }
 
-void recibirArchivo(int SocketFD, FILE *file,char *name){
-	char buffer[BUFFSIZE];
-	int recibido = -1;
+const char* AddressDisp(const char *direccion_fisica){
+	FILE *fp;
+	struct mntent *fs;
+	/*function opens the filesystem description file filename and returns a file pointer*/
+	fp = setmntent("/etc/mtab", "r");
+	if (fp == NULL) {
+		return "\"str_error\":\"ERROR: Al intentar abrir el fichero: /etc/mtab que contiene la direccion logico de los disp USB\"";
+	}
+	/* que leerá UNA linea del mtab, y les devolverá una estructura:*/
+	while ((fs = getmntent(fp)) != NULL){
+		/* resulta que direccion_fisica no contiene un numero al final que indica la particion correspondiente
+		en caso de solo poseer una sola particion posee el numero 1 (esto es lo mas comun para un dispositivo usb)*/
+		if(strstr(fs->mnt_fsname,direccion_fisica)>0){
+			endmntent(fp);
+			return fs->mnt_dir;
+		}
+	}
+	endmntent(fp);
+	return  "no se encuentra montado dicho dispositivo";
+}
 
-	/*Se abre el archivo para escritura*/
-	file = fopen(name,"wb");
-	while((recibido = recv(SocketFD, buffer, BUFFSIZE, 0)) > 0){
-		//printf("%s",buffer);
-		fwrite(buffer,sizeof(char),1,file);
-	}//Termina la recepción del archivo
-	fclose(file);
-}//End recibirArchivo procedure
 
-void enviarConfirmacion(int SocketFD){
-	char mensaje[80] = "Paquete Recibido";
-	printf("\nConfirmación enviada\n");
-	if(write(SocketFD,mensaje,sizeof(mensaje)) == ERROR)
-			perror("Error al enviar la confirmación:");
-}//End enviarConfirmacion
+char* ListarDispAlmMasivo(struct udev* udev){
+
+	struct udev_enumerate* enumerar = udev_enumerate_new(udev);
+
+	//Buscamos los dispositivos USB del tipo SCSI (MASS STORAGE)
+	udev_enumerate_add_match_subsystem(enumerar, "scsi");
+	udev_enumerate_add_match_property(enumerar, "DEVTYPE", "scsi_device");
+	udev_enumerate_scan_devices(enumerar);
+	
+	//Obtenemos los dispositivos con dichas caracteristicas
+	struct udev_list_entry *dispositivos = udev_enumerate_get_list_entry(enumerar);
+	struct udev_list_entry *entrada;
+
+	//Recorremos la lista obtenida
+	
+	char *lista = (char *)malloc(BUFF_DISP);
+	int n=0;
+	udev_list_entry_foreach(entrada, dispositivos) {
+		char *concat_str = (char *)malloc(BUFF_DISP);
+		const char* ruta = udev_list_entry_get_name(entrada);
+		struct udev_device* scsi = udev_device_new_from_syspath(udev, ruta);
+		
+		//obtenemos la información pertinente del dispositivo
+		struct udev_device* block = obtenerHijo(udev, scsi, "block");
+		struct udev_device* scsi_disk = obtenerHijo(udev, scsi, "scsi_disk");
+
+		struct udev_device* usb= udev_device_get_parent_with_subsystem_devtype(scsi, "usb", "usb_device");
+		
+		if (block && scsi_disk && usb){
+			const char *nodo=udev_device_get_devnode(block);
+			const char * validarerror=AddressDisp(nodo);
+			if(strstr(validarerror, "str_error")!=NULL ){
+				return (char *)validarerror;
+			}
+			n=sprintf(concat_str, "{\"nodo\":\"%s\", \"nombre\":\" \",\"montaje\":\"%s\",\"Vendor:idProduct\":\"%s:%s\",\"scsi\":\"%s\"}\n", 
+				nodo,
+				AddressDisp(nodo),
+				udev_device_get_sysattr_value(usb, "idVendor"),
+				udev_device_get_sysattr_value(usb, "idProduct"),
+				udev_device_get_sysattr_value(scsi, "vendor"));
+			if(strstr(lista, "nodo")!=NULL){
+				char *copia = (char *)malloc(BUFF_DISP);
+				sprintf(copia, "%s",lista);
+				sprintf(lista, "%s,%s",copia,concat_str);
+			}else{
+				sprintf(lista, "%s",concat_str);
+			}
+		}
+		if (block) udev_device_unref(block);
+		if (scsi_disk) udev_device_unref(scsi_disk);
+		udev_device_unref(scsi);
+		//validar para mas de dos dispositivos con contatenacion
+		
+	//		concat_str=NULL;
+	}
+	if(n==0) lista=" ";
+	udev_enumerate_unref(enumerar);
+	return lista;
+
+}
+//funcion que nos da a conocer la estructura de mntent
+void mntent(const struct mntent *fs){
+	printf("nodo :%s \n direccion logica :%s \n %s \n %s \n %d \n %d\n",
+		fs->mnt_fsname,  /* name of mounted filesystem(es el nodo del dispositivo) */
+		fs->mnt_dir,    /* filesystem path prefix (el directorio donde está montado.)*/
+		fs->mnt_type,	/* mount type  */
+		fs->mnt_opts,	/* mount options  */
+		fs->mnt_freq,	/* dump frequency in days */
+		fs->mnt_passno);	/* pass number on parallel fsck */
+}
 
 
-int main(int argc, char **argv)
-{
-    /*
-    pid_t process_id = 0;
-    pid_t sid = 0;
-    // Create child process
-    process_id = fork();
-    // Indication of fork() failure
-    if (process_id < 0)
-    {
-        printf("fork failed!\n");
-        // Return failure in exit status
-        exit(1);
-    }
-    // PARENT PROCESS. Need to kill it.
-    if (process_id > 0)
-    {
-        printf("process_id of child process %d \n", process_id);
-        // return success in exit status
-        exit(0);
-    }
-    //unmask the file mode
-    umask(0);
-    //set new session
-    sid = setsid();
-    if(sid < 0)
-    {
-        // Return failure
-        exit(1);
-    }
-    // Change the current working directory to root.
-    chdir(".");
-    // Close stdin. stdout and stderr
-    close(STDIN_FILENO);
-    close(STDOUT_FILENO);
-    close(STDERR_FILENO);*/
-    // Open a log file in write mode.
-    while(1)
-    {
-        struct udev* udev = udev_new();
-        
-            enumerate_usb_mass_storage(udev);
-        
-            udev_unref(udev);
+char* Disp(char *direccion_fisica){
+	FILE *fp;
+	struct mntent *fs;
+	/*funcion que habre los fileSystem*/
+	fp = setmntent("/etc/mtab", "r");
+	if (fp == NULL) {
+		return "\"str_error\":\"ERROR: Al intentar abrir el fichero: /etc/mtab que contiene la direccion logico de los disp USB\"";
+	}
+	/* que leerá UNA linea del mtab, y nos devolverá un tipo struc:*/
+	while ((fs = getmntent(fp)) != NULL){
+		/* resulta que direccion fisica no contiene un numero al final que indica la particion correspondiente*/
+		if(strstr(fs->mnt_fsname,direccion_fisica)>0){
+			endmntent(fp);
+			return(char*) fs->mnt_dir;
+		}
+	}
+	endmntent(fp);
+	return  "no se encuentra montado dicho dispositivo";
+}
 
-            sleep(5);
-    }
-    // a partir de aqui se iniciliaza el proceso socket
-    struct sockaddr_in stSockAddr;
-	int Res;
-	int SocketFD;
-	int puerto;
-	FILE *archivo;
+void ListenRequestClient(){ 
+	int  n,i,puerto = 8888;
+	char *host; 
+	if (( n = sysconf(_SC_HOST_NAME_MAX)) < 0) n = HOST_NAME_MAX; /* best guess */ 
+	if ((host = malloc(n)) == NULL) printf(" malloc error"); 
+	if (gethostname( host, n) < 0) 		//Obtenemos nombre del host
+		printf(" gethostname error"); 
+	//Direccion del servidor
+	struct sockaddr_in direccion_servidor;
+	memset(&direccion_servidor, 0, sizeof(direccion_servidor));	//ponemos en 0 la estructura direccion_servidor
 
-	if(argc == 1){
-		printf("Uso: ./cliente <ip> <puerto> <directorio a leer> <nombre del archivo>\n");
-		exit(-1);
+	//llenamos los campos
+	direccion_servidor.sin_family = AF_INET;		//IPv4
+	direccion_servidor.sin_port = htons(puerto);		//Convertimos el numero de puerto al endianness de la red
+	direccion_servidor.sin_addr.s_addr = inet_addr("127.0.0.1") ;	//Nos vinculamos a la interface localhost o podemos usar INADDR_ANY para ligarnos A TODAS las interfaces
+
+	if( (SkFd = InicializarServidor(SOCK_STREAM, (struct sockaddr *)&direccion_servidor, sizeof(direccion_servidor), 1000)) < 0){	//Hasta 1000 solicitudes en cola 
+		printf("existe un proceso ya ejecutanse. eliminar proceso daemonUSB\n");	
+	}		
+
+	while(1){
+		//Ciclo para enviar y recibir mensajes
+		if (( clienteFd = accept( SkFd, NULL, NULL)) < 0) { 		//Aceptamos una conexion
+			close(clienteFd);
+			continue;
+		} 
+	    char *solicitud = malloc(BUFERLEN*sizeof(char *));
+		recv(clienteFd, solicitud, BUFERLEN, 0);
+	  	//tratamiento tipo de solicitud
+	  	if ((strstr(solicitud, "GET") != NULL) && (strstr(solicitud, "listar_dispositivos") != NULL)) {
+  			//solicitud : GET - listar_dispositivo
+  			struct udev *udeva;
+			udeva = udev_new();
+			char* lista=ListarDispAlmMasivo(udeva);
+		    send(clienteFd,lista,strlen(lista),0);
+		    close(clienteFd);
+		}else if((strstr(solicitud, "obtenerdireccion") != NULL) ) {
+			char * respx=malloc(BUFERLEN*sizeof(char *));
+			int z=0,j=0;
+			printf("%lu \n",strlen(solicitud));
+			for(i=0;i<strlen(solicitud);i++){
+				if(solicitud[i]=='-' && i==0){
+					i++;
+					while(solicitud[i]!='-'){
+						printf("%c\n",solicitud[i]);
+						respx[j]=solicitud[i];
+						i++;
+						j++;
+					}
+					z++;
+				}
+			}
+			respx[j] = '\0';
+			printf("sdc%svdvdv\n",respx);
+			respx=Disp(solicitud);
+			send(clienteFd,respx,strlen(respx),0);
+		    close(clienteFd);
+		}
+		close(clienteFd);
+			
+		
+	}
+}
+
+
+
+int main(void) {
+	pid_t pid, sid;
+  	    
+	pid = fork();
+	/* validar fork retorno */
+	if (pid < 0) {
+		return -1;
+	}
+	/* finalizar proceso padre */
+	if (pid > 0) {
+		return -1;
 	}
 
-	if(argc != 5){
-		printf( "por favor especificar un numero de puerto\n");
+	/*  mascara de ficheros cambiado: acceso de otro usuario a ficheros generados aqui*/
+	umask(0);
+	/* asignar un nuevo pid evitando problemas que se genere un proceso zombie*/
+	/* y validar nuevo id para procesos */
+	
+	sid = setsid();
+	
+	if (sid < 0) {
+		perror("new SID failed");
+		
 	}
 
-	/*Se crea el socket*/
-	SocketFD = socket(PF_INET, SOCK_STREAM, IPPROTO_TCP);
-    
-	/*Se verifica la integridad del socket*/
-	if (SocketFD == ERROR){
-		perror("cannot create socket");
-		exit(EXIT_FAILURE);
+	/* recomendable cambiar wd (medida de seguridad)*/
+
+	if ((chdir("/")) < 0) {
+		perror("error al cambiar directorio de trabajo");
+		return -1;
 	}
 
-	/*Se configura la dirección del socket del cliente*/
-	memset(&stSockAddr, 0, sizeof stSockAddr);
-	puerto = atoi(argv[2]);
-	stSockAddr.sin_family = AF_INET;
-	stSockAddr.sin_port = htons(puerto);
-	Res = inet_pton(AF_INET, argv[1], &stSockAddr.sin_addr);
+	/* descriptores standard deben ser cerrados (medida de seguridad) */
 
-	if (0 > Res){
-		perror("error: El primer parametro no es una familia de direcciónes");
-		close(SocketFD);
-		exit(EXIT_FAILURE);
-	}else if (Res == 0){
-		perror("char string (El segundo parametro no contiene una dirección IP válida");
-		close(SocketFD);
-		exit(EXIT_FAILURE);
-	}
-
-	if (connect(SocketFD, (struct sockaddr *)&stSockAddr, sizeof stSockAddr) == ERROR){
-		perror("Error a la hora de conectarse con el servidor");
-		close(SocketFD);
-		exit(EXIT_FAILURE);
-	}
-
-	printf("Se ha conectado con el servidor:%s\n",(char *)inet_ntoa(stSockAddr.sin_addr));
-	printf("%s\n",argv[3]);
-	if(write(SocketFD,argv[3],sizeof(argv[3])) == ERROR)
-	{
-			perror("Error al enviar la confirmación:");
-	}
-	sleep(5);
-	// se recibe el archivo
-	recibirArchivo(SocketFD,archivo,argv[4]);
-	enviarConfirmacion(SocketFD);
-	close(SocketFD);
-    return 0;
+	close(STDIN_FILENO);
+	close(STDOUT_FILENO);
+	close(STDERR_FILENO);
+	/* proceso daemon */
+	/* bucle infinito del daemon */
+	/* aqui responder las solicitudes que pida el webserver*/
+	while (1) {
+		/*falta describir*/
+		ListenRequestClient();
+	}	
 }
