@@ -272,7 +272,76 @@ printf("\n%d\n",(int)strlen(direccion) );
 sprintf(elementolista,"%s|%s|%s|",elementolista,nombre,direccion); 
 return elementolista;  
 }
+//funciones de iteracion
+static int iterar_encabezado (void *cls, enum MHD_ValueKind kind, const char *key, const char *value){
+  printf ("Encabezado %s: %s\n", key, value);
+  return MHD_YES;
+}
 
+void iterar(struct NameUSB *lista[]){
+  printf("\n  VIRTUAL SERVIDOR DE DISPOSITIVO NOMBRADOS. \n");
+  if(elementos==0) {
+    printf("Lista vacia.No hay dispositivo USB nombrados. \n");
+    return;
+  }
+  for (int i = 0; i < elementos; i++) {     
+      printf("dispositivo N %d | nombre:%s,direccion fisica:%s,direccion logica:%s \n", i+1,lista[i]->nombre,lista[i]->direccion_fisica,lista[i]->direccion_logica);
+      }
+}
+      
+void iterarlistado(struct USBlista *lista[]){
+  printf("\n HISTORIAL VIRTUAL SERVIDOR DE DISPOSITIVO . \n");
+  if(usbelementos==0) {
+    printf("Lista vacia.No hay dispositivo USB . \n");
+    return;
+  }
+  for (int i = 0; i < usbelementos; i++) {     
+    printf("USB N %d | nombre:%s,nodo:%s,montaje:%s,sci:%s,VendoridProduct :%s \n", i+1,lista[i]->nombre,lista[i]->nodo,lista[i]->montaje,lista[i]->sci,lista[i]->VendoridProduct);
+  }
+}
+
+int jsonlistar(const char *upload_data, int cantparametros, const char *s[]) {//precjson
+  int r,i;
+  jsmn_parser p;
+  jsmntok_t t[POSTBUFFERSIZE]; 
+  jsmn_init(&p);
+  char* upload_datas=malloc(sizeof(char)*(strlen( upload_data)));
+        //char * respx=malloc(8*sizeof(char *));
+  int j=0;
+  for(int i=0;i<strlen(upload_data);i++){
+    if(upload_data[i]=='{' && j==0){
+      i++;
+      while(upload_data[i]!='}'){
+        upload_datas[j]=upload_data[i];
+        i++;
+        j++;
+      }
+    }
+  }
+  char * re=malloc((j-1)*sizeof(char *));
+  memset(re,0,j-1);
+  re=upload_datas;
+  r = jsmn_parse(&p,  re, strlen(re), t, POSTBUFFERSIZE);
+  printf ("\nProcesando contenido del json.....\n");
+        /* Assume the top-level element is an object */
+  if (r < 0) {
+    printf("Fallido parsing JSON: %d\n", r);
+    return 0;
+  }
+  if (r < 1 || t[0].type != JSMN_OBJECT) {
+    printf("Objecto no esperado\n");
+    return 0;
+  }
+  for(int token=0;token < cantparametros; token++){
+    for (i = 1; i < r; i++) {
+      if (jsonequals( upload_datas, &t[i], s[token]) == 0) {
+        printf("- %s: %.*s\n", s[token],t[i+1].end-t[i+1].start-4, upload_datas + t[i+1].start+2);
+        i++;
+      }
+    }
+  }
+  return 1;
+}
 
 static void request_completed (void *cls, struct MHD_Connection *connection,
          void **con_cls, enum MHD_RequestTerminationCode toe)
