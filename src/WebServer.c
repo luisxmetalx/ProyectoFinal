@@ -50,21 +50,70 @@ struct NameUSB{
   int usbelementos=0;
 
 
-static int send_page (struct MHD_Connection *connection, const char *page)
-{
-int ret;
-struct MHD_Response *response;
+  int reconnect( int domain, int type, int protocol,  const struct sockaddr *addr, socklen_t alen){
+    int fd; 
+    for (int numsec = 1; numsec <= MAXSLEEP; numsec++) { 
+      if (( fd = socket( domain, type, protocol)) < 0)  return(-1); 
+      if (connect( fd, addr, alen) == 0) return(fd); 
+      close(fd);  
+      sleep(1);
+    } 
+    return(-1); 
+  }
 
 
-response = MHD_create_response_from_buffer (strlen (page), (void *) page,MHD_RESPMEM_PERSISTENT);
-if (!response)
-  return MHD_NO;
-
-ret = MHD_queue_response (connection, MHD_HTTP_OK, response);
-MHD_destroy_response (response);
-
-return ret;
+char* init_cliente(char *request){ 
+    int sockfd,rec; 
+    int puerto =8888;
+    struct sockaddr_in socketcliente;
+    memset(&socketcliente, 0, sizeof(socketcliente)); 
+    socketcliente.sin_family = AF_INET;
+    socketcliente.sin_port = htons(puerto);
+    socketcliente.sin_addr.s_addr = inet_addr("127.0.0.1") ; 
+    if (( sockfd = reconnect( socketcliente.sin_family, SOCK_STREAM, 0, (struct sockaddr *)&socketcliente, sizeof(socketcliente))) < 0) { 
+      printf("fallo conexion con el proceso daemon .\nPuede que el puerto solicitado este ya ocupado, vuelva a ejecutar el daemon\"\n"); 
+      return "\"str_error\":\"ERROR:fallo conexion con el proceso daemon. Puede que el puerto solicitado este ya ocupado, vuelva a ejecutar el daemon\"\n";
+    } 
+    if(strstr(request, "escribir_archivo")!=NULL){
+      send(sockfd,"escribir_archivo",BUFLEN,0);
+      sleep(1);
+      send(sockfd,request,strlen(request),0);
+      printf("Solicitud enviada proceso daemon:\n ");
+      printf("Procesando respuesta daemon\n");
+      sleep(1);
+      char *file = malloc(BUFLEN*sizeof(char *));
+      memset(file,0,BUFLEN);
+      if((rec=recv(sockfd, file,BUFLEN,0))>0){
+        if (strstr(file, "ERROR") != NULL) {
+          printf("ERROR: respuesta daemon fallida\n");
+          close(sockfd);
+          return "\"str_error\":\"ERROR: respuesta deamon fallida\"\n";
+        }
+        printf("respuesta del daemonUSB:\n %s\n",file);
+        close(sockfd);
+        return file;
+      }
+    }else{
+      send(sockfd,request,BUFLEN,0);
+      printf("Solicitud enviada proceso daemon:\n %s \n",request);
+      printf("Procesando respuesta daemon\n");
+      char *file = malloc(BUFFERING*sizeof(char *));
+      memset(file,0,BUFFERING);
+      if((rec=recv(sockfd, file, BUFFERING,0))>0){
+        if (strstr(file, "ERROR") != NULL) {
+          printf("ERROR: respuesta daemon fallida\n");
+          close(sockfd);
+          return "\"str_error\":\"ERROR:respuesta daemon fallida\"\n";
+        }
+        printf("respuesta del daemon:\n %s\n",file);
+        close(sockfd);
+        return file;
+      }  
+    }
+    close(sockfd);
+    return "\"str_error\":\"ERROR:respuesta daemon fallida\"\n";
 }
+  
 
 
 static int iterate_post (void *coninfo_cls, enum MHD_ValueKind kind, const char *key,
