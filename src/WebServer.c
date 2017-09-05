@@ -9,19 +9,22 @@
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
-
-#if defined(_MSC_VER) && _MSC_VER+0 <= 1800
-/* Substitution is OK while return value is not used */
-#define snprintf _snprintf
-#endif
-
-#define PORT            8888
+#include "jsmn.h"
+#include <sys/stat.h>
+#include <stddef.h>        
+#include <unistd.h>             
+#include <netdb.h> 
+#include <errno.h> 
+#include <syslog.h> 
+#include <fcntl.h>
+#include <netinet/in.h>
+#include <arpa/inet.h>
+#include <sys/resource.h>
+#define MAXSLEEP        1
+#define TAMANO 25
 #define POSTBUFFERSIZE  512
-#define MAXNAMESIZE     20
-#define MAXANSWERSIZE   512
-
-#define GET             0
-#define POST            1
+#define BUFLEN 1024
+#define BUFFERING 100000
 
 struct connection_info_struct
 {
