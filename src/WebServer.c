@@ -262,7 +262,6 @@ for (i = 1; i < r; i++) {
     tamano=atoi(tamano_contenido);
     char *contenido=malloc(sizeof(char)*(tamano));
     sprintf(contenido,"%.*s",t[i+1].end-t[i+1].start, upload_datas + t[i+1].start);      
-    //printf("\n - %s: %.*s", "contenido",t[i+1].end-t[i+1].start, upload_datas + t[i+1].start);
     i++;
     sprintf(elementolista,"%s|%s",elementolista,contenido); 
   }
