@@ -167,20 +167,23 @@
 	 return send_page (connection, errorpage);
    }
    
-   int main ()
+   int main (int argc, char *argv[])
    {
-	 struct MHD_Daemon *daemon;
-   
-	 daemon = MHD_start_daemon (MHD_USE_SELECT_INTERNALLY, PORT, NULL, NULL,
-								&answer_to_connection, NULL,
-								MHD_OPTION_NOTIFY_COMPLETED, request_completed,
-								NULL, MHD_OPTION_END);
-	 if (NULL == daemon)
-	   return 1;
-   
-	 (void) getchar ();
-   
-	 MHD_stop_daemon (daemon);
-   
-	 return 0;
+    if(argc != 2){
+        printf("Uso: ./bin/WebServer <puerto>\n");
+        exit(-1);
+      }
+    int puerto = atoi(argv[1]);
+    struct MHD_Daemon *daemon;
+
+    daemon = MHD_start_daemon (MHD_USE_SELECT_INTERNALLY, puerto, NULL, NULL,
+                             &answer_to_connection, NULL, MHD_OPTION_END);
+    if (NULL == daemon)
+        return 1;
+
+    getchar ();
+
+    MHD_stop_daemon (daemon);
+
+    return 0;
    }
