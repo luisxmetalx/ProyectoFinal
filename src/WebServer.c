@@ -79,7 +79,6 @@ char* init_cliente(char *request){
       sleep(1);
       send(sockfd,request,strlen(request),0);
       printf("Solicitud enviada proceso daemon:\n ");
-      printf("Procesando respuesta daemon\n");
       sleep(1);
       char *file = malloc(BUFLEN*sizeof(char *));
       memset(file,0,BUFLEN);
@@ -96,7 +95,6 @@ char* init_cliente(char *request){
     }else{
       send(sockfd,request,BUFLEN,0);
       printf("Solicitud enviada proceso daemon:\n %s \n",request);
-      printf("Procesando respuesta daemon\n");
       char *file = malloc(BUFFERING*sizeof(char *));
       memset(file,0,BUFFERING);
       if((rec=recv(sockfd, file, BUFFERING,0))>0){
@@ -116,11 +114,74 @@ char* init_cliente(char *request){
   
 
 
-static int iterate_post (void *coninfo_cls, enum MHD_ValueKind kind, const char *key,
-      const char *filename, const char *content_type,
-      const char *transfer_encoding, const char *data, uint64_t off,
-      size_t size)
-{
+static int jsonequals(const char *json, jsmntok_t *tok, const char *s) {
+  if ((int) strlen(s) == tok->end - tok->start-4 && strncmp(json + tok->start+2, s, tok->end - tok->start-4) == 0) {
+    return 0;
+  }
+  return -1;
+}
+
+static int jsonlimpio(const char *json, jsmntok_t *tok, const char *s) {
+  if (tok->type == JSMN_STRING && (int) strlen(s) == tok->end - tok->start &&
+      strncmp(json + tok->start, s, tok->end - tok->start) == 0) {
+    return 0;
+  }
+  return -1;
+}
+
+char* jsonombrar(const char *upload_data) {//jasonombrar
+  char *elementolista=malloc(sizeof(char)*(POSTBUFFERSIZE));  
+  int r,i;
+  jsmn_parser p;
+  jsmntok_t t[POSTBUFFERSIZE]; 
+  jsmn_init(&p);
+  char* nodo=malloc(sizeof(char)*(POSTBUFFERSIZE));
+  char* nombre=malloc(sizeof(char)*(POSTBUFFERSIZE));
+  char* upload_datas=malloc(sizeof(char)*(strlen( upload_data)-2));
+  memset(upload_datas,0,strlen( upload_data)-2);
+      int j=0;
+      for(int i=0;i<strlen(upload_data);i++){
+        if(upload_data[i]=='{' && j==0){
+          while(upload_data[i]!='}'){
+            upload_datas[j]=upload_data[i];
+            i++;
+            j++;
+          }
+          upload_datas[j]=upload_data[i];
+        }
+      }
+  char * re=malloc((j-1)*sizeof(char *));
+  memset(re,0,j-1);
+  re=upload_datas;
+  r = jsmn_parse(&p,  re, strlen(re), t, POSTBUFFERSIZE);
+  printf("%d,%s",r,re);
+  if (r < 0) {
+    return NULL;
+  }
+  if (r < 1 || t[0].type != JSMN_OBJECT) {
+    return NULL;
+  }
+    for (i = 1; i < r; i++) {
+      if (jsonequals( upload_datas, &t[i], "nodo") == 0) {
+        sprintf(nodo,"%.*s",t[i+1].end-t[i+1].start-4, upload_datas + t[i+1].start+2);      
+        printf("\n - %s: %.*s\n", "nodo",t[i+1].end-t[i+1].start-4, upload_datas + t[i+1].start+2);
+        i++;
+      }
+      if (jsonequals( upload_datas, &t[i], "nombre") == 0) {
+        sprintf(nombre,"%.*s",t[i+1].end-t[i+1].start-4, upload_datas + t[i+1].start+2);      
+        printf("\n - %s: %.*s\n", "nombre",t[i+1].end-t[i+1].start-4, upload_datas + t[i+1].start+2);
+        i++;
+      }      
+    }
+  struct NameUSB *usb=malloc(sizeof(struct NameUSB));
+  usb->nombre=nombre;
+  usb->direccion_fisica=nodo;
+  nombrados[elementos]=usb;
+  elementos++;     
+  sprintf(elementolista,"%s-%s",usb->direccion_fisica, usb->nombre); 
+  return elementolista;
+}
+// faltan funciones de parsing de JSON
 struct connection_info_struct *con_info = coninfo_cls;
 
 if (0 == strcmp (key, "name"))
