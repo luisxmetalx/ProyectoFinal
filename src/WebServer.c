@@ -182,28 +182,98 @@ char* jsonombrar(const char *upload_data) {//jasonombrar
   return elementolista;
 }
 // faltan funciones de parsing de JSON
-struct connection_info_struct *con_info = coninfo_cls;
-
-if (0 == strcmp (key, "name"))
-  {
-  if ((size > 0) && (size <= MAXNAMESIZE))
-    {
-    char *answerstring;
-    answerstring = malloc (MAXANSWERSIZE);
-    if (!answerstring)
-      return MHD_NO;
-
-    snprintf (answerstring, MAXANSWERSIZE, greetingpage, data);
-    con_info->answerstring = answerstring;
-    }
-  else
-    con_info->answerstring = NULL;
-
-  return MHD_NO;
+char* obtenerDireccion(char* nombre){
+  if(elementos==0) {
+    printf("No existe algun dispositivo nombrado.\n");
+    return"\"str_error\":\"ERROR: No existe algun dispositivo nombrado.\"\n";
   }
-
-return MHD_YES;
+  for (int i = 0; i < elementos; i++) {      
+    if(strstr(nombrados[i]->nombre,nombre )!=NULL){
+      return  nombrados[i]->direccion_logica;
+      } 
+  } 
+  printf("No existe algun dispositivo nombrado con ese nombre.\n");
+  return"\"str_error\":\"ERROR:No existe algun dispositivo nombrado con ese nombre. \""; 
 }
+
+char* jsonEscribir(const char *upload_data) {
+char *elementolista=malloc(sizeof(char)*(BUFFERING)); 
+memset(elementolista,0,BUFFERING);
+int r,i;
+jsmn_parser p;
+jsmntok_t t[BUFLEN]; 
+jsmn_init(&p);
+char* nombre_archivo=malloc(sizeof(char)*(BUFLEN));
+char *nombre=malloc(sizeof(char)*(BUFLEN));
+char *solicitud=malloc(sizeof(char)*(BUFLEN));
+char *tamano_contenido=malloc(sizeof(char)*(BUFLEN));
+int tamano;
+char* upload_datas=malloc(sizeof(char)*(strlen( upload_data)-2));
+memset(upload_datas,0,strlen( upload_data)-2);
+int j=0;
+for(int i=0;i<strlen(upload_data);i++){
+  if(upload_data[i]=='{' && j==0){
+    while(upload_data[i]!='}'){
+      upload_datas[j]=upload_data[i];
+      i++;
+      j++;
+    }
+    upload_datas[j]=upload_data[i];
+  }
+}
+char * re=malloc((j-1)*sizeof(char *));
+memset(re,0,j-1);
+re=upload_datas;
+r = jsmn_parse(&p,  re, strlen(re), t, 128);
+printf ("\nprocesando contenido del json.....\n");
+printf("json recibido %d:\n %s \n",r,re);
+/* Assume the top-level element is an object */
+if (r < 0) return NULL;
+if (r < 1 || t[0].type != JSMN_OBJECT) return NULL;
+for (i = 1; i < r; i++) {
+  if (jsonlimpio( upload_datas, &t[i], "nombre_archivo") == 0) {
+    sprintf(nombre_archivo,"%.*s",t[i+1].end-t[i+1].start, upload_datas + t[i+1].start);      
+    printf("\n - %s: %.*s", "nombre_archivo",t[i+1].end-t[i+1].start, upload_datas + t[i+1].start);
+    i++;
+    sprintf(elementolista,"%s",nombre_archivo); 
+  }
+}
+for (i = 1; i < r; i++) {
+  if (jsonlimpio( upload_datas, &t[i], "nombre") == 0) {
+    sprintf(nombre,"%.*s",t[i+1].end-t[i+1].start, upload_datas + t[i+1].start);      
+    printf("\n - %s: %.*s", "nombre",t[i+1].end-t[i+1].start, upload_datas + t[i+1].start);
+    i++;
+  }
+  if (jsonlimpio( upload_datas, &t[i], "tamano_contenido") == 0) {
+    sprintf(tamano_contenido,"%.*s",t[i+1].end-t[i+1].start, upload_datas + t[i+1].start);      
+    printf("\n - %s: %.*s", "tamano_contenido",t[i+1].end-t[i+1].start, upload_datas + t[i+1].start);
+    i++;
+    sprintf(elementolista,"%s|%s",elementolista,tamano_contenido); 
+  }
+  if (jsonlimpio( upload_datas, &t[i], "solicitud") == 0) {
+    sprintf(solicitud,"%.*s",t[i+1].end-t[i+1].start, upload_datas + t[i+1].start);      
+    printf("\n - %s: %.*s", "solicitud",t[i+1].end-t[i+1].start, upload_datas + t[i+1].start);
+    i++;
+    sprintf(elementolista,"%s|%s",elementolista,solicitud); 
+  }
+}
+for (i = 1; i < r; i++) {
+  if (jsonlimpio( upload_datas, &t[i], "contenido") == 0) {
+    tamano=atoi(tamano_contenido);
+    char *contenido=malloc(sizeof(char)*(tamano));
+    sprintf(contenido,"%.*s",t[i+1].end-t[i+1].start, upload_datas + t[i+1].start);      
+    //printf("\n - %s: %.*s", "contenido",t[i+1].end-t[i+1].start, upload_datas + t[i+1].start);
+    i++;
+    sprintf(elementolista,"%s|%s",elementolista,contenido); 
+  }
+}
+char* direccion=obtenerDireccion(nombre);
+if(strstr(direccion, "str_error")!=NULL) return direccion;
+printf("\n%d\n",(int)strlen(direccion) );
+sprintf(elementolista,"%s|%s|%s|",elementolista,nombre,direccion); 
+return elementolista;  
+}
+
 
 static void request_completed (void *cls, struct MHD_Connection *connection,
          void **con_cls, enum MHD_RequestTerminationCode toe)
