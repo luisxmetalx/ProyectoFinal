@@ -26,23 +26,28 @@
 #define BUFLEN 1024
 #define BUFFERING 100000
 
-struct connection_info_struct
-{
-int connectiontype;
-char *answerstring;
-struct MHD_PostProcessor *postprocessor;
+struct USBlista{
+  char* nombre;
+  char* nodo;
+  char* montaje;
+  char* sci;
+  char* VendoridProduct;
 };
+struct manejoColaJson{
+  char* info;
+  char* stringjson;
+};
+struct NameUSB{
+    char* nombre;
+    char* direccion_fisica;
+    char* direccion_logica;
+};
+  
+  struct NameUSB* nombrados[TAMANO];
+  int elementos=0;
 
-const char *askpage = "<html><body>\
-           What's your name, Sir?<br>\
-           <form action=\"/namepost\" method=\"post\">\
-           <input name=\"name\" type=\"text\">\
-           <input type=\"submit\" value=\" Send \"></form>\
-           </body></html>";
-
-const char *greetingpage = "<html><body><h1>Welcome, %s!</center></h1></body></html>";
-
-const char *errorpage = "<html><body>This doesn't seem to be right.</body></html>";
+  struct USBlista* usblista[TAMANO];  
+  int usbelementos=0;
 
 
 static int send_page (struct MHD_Connection *connection, const char *page)
