@@ -300,13 +300,79 @@ void iterarlistado(struct USBlista *lista[]){
   }
 }
 
+void procesandolistaUSB(const char *upload_data) {
+  int r,i;
+  jsmn_parser p;
+  jsmntok_t t[POSTBUFFERSIZE]; 
+  jsmn_init(&p);
+  char* nodo=malloc(sizeof(char)*(TAMANO));
+  char *nombre=malloc(sizeof(char)*(TAMANO*2));
+  char *montaje=malloc(sizeof(char)*(TAMANO*2));
+  char *sci=malloc(sizeof(char)*(TAMANO*2));
+  char *VendoridProduct=malloc(sizeof(char)*(TAMANO*2));
+  char* upload_datas=malloc(sizeof(char)*(strlen( upload_data)-2));
+  memset(upload_datas,0,strlen( upload_data)-2);
+  int j=0;
+  for(int i=0;i<strlen(upload_data);i++){
+    if(upload_data[i]=='{' && j==0){
+      while(upload_data[i]!='}'){
+        upload_datas[j]=upload_data[i];
+        i++;
+        j++;
+      }
+      upload_datas[j]=upload_data[i];
+    }
+  }
+  char * re=malloc((j-1)*sizeof(char *));
+  memset(re,0,j-1);
+  re=upload_datas;
+  r = jsmn_parse(&p,  upload_data, strlen(upload_data), t, 128);
+  if (r < 0) {
+    return ;
+  }
+  if (r < 1 || t[0].type != JSMN_OBJECT) {
+    return ;
+  }
+  for (i = 1; i < r; i++) {
+    if (jsonlimpio( upload_data, &t[i], "nombre") == 0) {
+      sprintf(nombre,"%.*s",t[i+1].end-t[i+1].start, upload_datas + t[i+1].start);      
+      i++;
+    }
+    if (jsonlimpio( upload_data, &t[i], "nodo") == 0) {
+      sprintf(nodo,"%.*s",t[i+1].end-t[i+1].start, upload_datas + t[i+1].start);      
+      i++;
+    }
+    if (jsonlimpio( upload_data, &t[i], "montaje") == 0) {
+      sprintf(montaje,"%.*s",t[i+1].end-t[i+1].start, upload_datas + t[i+1].start);      
+      i++;
+    }  
+    if (jsonlimpio( upload_data, &t[i], "scsi") == 0) {
+      sprintf(sci,"%.*s",t[i+1].end-t[i+1].start, upload_datas + t[i+1].start);      
+      i++;
+    }  
+    if (jsonlimpio( upload_data, &t[i], "Vendor:idProduct") == 0) {
+      sprintf(VendoridProduct,"%.*s",t[i+1].end-t[i+1].start, upload_datas + t[i+1].start);      
+      i++;
+    }         
+  }
+ struct USBlista *usb2=malloc(sizeof(struct USBlista));
+  usb2->nombre=nombre;
+  usb2->nodo=nodo;
+  usb2->montaje=montaje;
+  usb2->sci=sci;
+  usb2->VendoridProduct=VendoridProduct;
+  usblista[usbelementos]=usb2;
+  usbelementos++;     
+  return;
+}
+
+
 int jsonlistar(const char *upload_data, int cantparametros, const char *s[]) {//precjson
   int r,i;
   jsmn_parser p;
   jsmntok_t t[POSTBUFFERSIZE]; 
   jsmn_init(&p);
   char* upload_datas=malloc(sizeof(char)*(strlen( upload_data)));
-        //char * respx=malloc(8*sizeof(char *));
   int j=0;
   for(int i=0;i<strlen(upload_data);i++){
     if(upload_data[i]=='{' && j==0){
@@ -323,7 +389,6 @@ int jsonlistar(const char *upload_data, int cantparametros, const char *s[]) {//
   re=upload_datas;
   r = jsmn_parse(&p,  re, strlen(re), t, POSTBUFFERSIZE);
   printf ("\nProcesando contenido del json.....\n");
-        /* Assume the top-level element is an object */
   if (r < 0) {
     printf("Fallido parsing JSON: %d\n", r);
     return 0;
@@ -343,84 +408,209 @@ int jsonlistar(const char *upload_data, int cantparametros, const char *s[]) {//
   return 1;
 }
 
-static void request_completed (void *cls, struct MHD_Connection *connection,
-         void **con_cls, enum MHD_RequestTerminationCode toe)
-{
-struct connection_info_struct *con_info = *con_cls;
-
-if (NULL == con_info)
-  return;
-
-if (con_info->connectiontype == POST)
-  {
-  MHD_destroy_post_processor (con_info->postprocessor);
-  if (con_info->answerstring)
-    free (con_info->answerstring);
+void tokenizarsolicitud(char* listausb){
+  char* usb1=malloc(BUFLEN*sizeof(char*));
+  if(strstr(listausb,"},")>0){
+    const char delimitadores[2] = "}";
+    char *token;
+    token = strtok(listausb, delimitadores);
+    int i=0;
+    while( token != NULL ) {
+      sprintf(usb1,"%s}",token);
+      if(i>0){
+      procesandolistaUSB(usb1+1);
+      printf("%s\n", usb1+1);
+      }else{
+      procesandolistaUSB(usb1);
+      printf("%s\n", usb1);
+      i++;
+    }
+      token = strtok(NULL, delimitadores);
+      
+   }
+  }else{
+    procesandolistaUSB(listausb);
   }
-
-free (con_info);
-*con_cls = NULL;
 }
 
-
-static int answer_to_connection (void *cls, struct MHD_Connection *connection,
-          const char *url, const char *method,
-          const char *version, const char *upload_data,
-          size_t *upload_data_size, void **con_cls)
-{
-if (NULL == *con_cls)
-  {
-  struct connection_info_struct *con_info;
-
-  con_info = malloc (sizeof (struct connection_info_struct));
-  if (NULL == con_info)
-    return MHD_NO;
-  con_info->answerstring = NULL;
-
-  if (0 == strcmp (method, "POST"))
-    {
-    con_info->postprocessor =
-      MHD_create_post_processor (connection, POSTBUFFERSIZE,
-                   iterate_post, (void *) con_info);
-
-    if (NULL == con_info->postprocessor)
-      {
-      free (con_info);
-      return MHD_NO;
+struct USBlista* asignarnombre(char * solicitud){
+  char * respx=malloc(8*sizeof(char *));
+  char * resp2=malloc(20*sizeof(char *));
+    int j=0,z=0,w=0;
+    for(int i=0;i<strlen(solicitud);i++){
+      if(solicitud[i]=='-' && j==0){
+        i++;
+        while(solicitud[i]!='-'){
+          respx[j]=solicitud[i];
+          i++;
+          j++;
+        }
+        z++;
+        i++;
       }
-
-    con_info->connectiontype = POST;
+      if(z==1){
+        resp2[w]=solicitud[i];
+        w++;
+      }
     }
-  else
-    con_info->connectiontype = GET;
-
-  *con_cls = (void *) con_info;
-
-  return MHD_YES;
+  char * r=malloc((j-2)*sizeof(char *));
+  memset(r,0,j-2);
+  char * nombre=malloc((w)*sizeof(char *));
+  memset(nombre,0,w-1);
+  r=respx;
+  nombre=resp2;
+  for (int i = 0; i < usbelementos; i++) {   
+    if(strstr(r,usblista[i]->nodo )!=NULL){
+      usblista[i]->nombre=nombre;
+      return  usblista[i];
+    } 
   }
+  return NULL;
+}
+  
 
-if (0 == strcmp (method, "GET"))
-  {
-  return send_page (connection, askpage);
-  }
-
-if (0 == strcmp (method, "POST"))
-  {
-  struct connection_info_struct *con_info = *con_cls;
-
-  if (*upload_data_size != 0)
-    {
-    MHD_post_process (con_info->postprocessor, upload_data,
-              *upload_data_size);
-    *upload_data_size = 0;
-
-    return MHD_YES;
+static int send_response(struct MHD_Connection *connection, const char *page, int statuscod){
+  int tmp;
+  struct MHD_Response *response;
+  response =MHD_create_response_from_buffer (strlen (page), (void *) page,MHD_RESPMEM_PERSISTENT);
+  if (!response) return MHD_NO;
+  MHD_add_response_header(response,"Content-Type","application/json");
+  tmp = MHD_queue_response (connection, statuscod, response);
+  MHD_destroy_response (response);
+  return tmp;
+}
+    
+int answer_to_connection (void *cls, struct MHD_Connection *connection, const char *url, const char *method, const char *version,
+  const char *upload_data, size_t *upload_data_size, void **con_cls){
+  //procesando los tipos de solicitudes
+  char* jsonresp=malloc(BUFFERING*sizeof(char *));
+  memset(jsonresp,0,BUFFERING);
+  char* solicitud=malloc(BUFFERING*sizeof(char *));
+  memset(solicitud,0,BUFFERING);
+  if (0 == strcmp (method,MHD_HTTP_METHOD_GET)  && !strncasecmp(url, "/listar_dispositivos", 19)){
+    sprintf(solicitud, "%s-%s",method,"listar_dispositivos");
+    printf ("\nNueva  %s solicitud en  %s con  version %s \n", method, url, version);
+    MHD_get_connection_values (connection, MHD_HEADER_KIND, iterar_encabezado,NULL);
+    char *resp=init_cliente(solicitud);
+    if(strstr(resp, "str_error")!=NULL ){
+      sprintf(jsonresp,"{\"solicitud\": \"listar_dispositivos\", \n"
+        "\"status\": \"-1 \", %s}",resp);
+      return send_response (connection, jsonresp,400); 
+    }else{
+      if(strlen(resp)<=1){
+        sprintf(jsonresp,"{\"solicitud\": \"listar_dispositivos\", \"dispositivos\": [%s ], \n"
+          "\"status\": \"0\", \"str_error\" :\"no existen dispositivos actualmente conectados\" }",resp);
+        return send_response (connection, jsonresp, MHD_HTTP_OK); 
+      }else{
+        sprintf(jsonresp,"{\"solicitud\": \"listar_dispositivos\", \"dispositivos\": [%s ], \n"
+        "\"status\": \"0\", \"str_error\" : 0}",resp);
+        tokenizarsolicitud(resp);
+        //iterarlistado(usblista);
+        return send_response (connection, jsonresp, MHD_HTTP_OK);
+      }
     }
-  else if (NULL != con_info->answerstring)
-    return send_page (connection, con_info->answerstring);
   }
-
-return send_page (connection, errorpage);
+//solicitud nombrar_dispositivo
+  else if (0 == strcmp (method, "POST") && !strncasecmp(url, "/nombrar_dispositivo", 17)){
+    struct manejoColaJson *cola = NULL;
+    cola = (struct manejoColaJson*)*con_cls;
+    if(cola == NULL) {
+      cola = malloc(sizeof(struct manejoColaJson));
+      cola->info = 0;
+      *con_cls = cola;
+       return MHD_YES;
+    }
+    if(*upload_data_size != 0) {
+        cola->stringjson= malloc(*upload_data_size + 1);
+        strncpy(cola->stringjson, upload_data, *upload_data_size);
+        *upload_data_size = 0;
+        return MHD_YES;
+   }else {
+      printf ("\nNueva  %s solicitud en  %s con  version %s \n", method, url, version);
+      iterar(nombrados);
+      MHD_get_connection_values (connection, MHD_HEADER_KIND, iterar_encabezado,NULL);
+      printf ("obteniendo json con información............\n");
+      sprintf(solicitud, "%s-%s","GET","listar_dispositivos");
+      char *respuestadaemon=init_cliente(solicitud);
+      if(strstr(respuestadaemon, "str_error")==NULL && strlen(respuestadaemon)>=2){
+        tokenizarsolicitud(respuestadaemon);
+        char * resp=jsonombrar(cola->stringjson);
+        if(resp!=NULL){
+          char *nuevo=malloc(BUFFERING*sizeof(char *));
+          sprintf(nuevo, "%s-%s","obtenerdireccion",resp);
+          struct USBlista *usb2=malloc(sizeof(struct USBlista));
+          usb2=asignarnombre(nuevo);
+          nombrados[elementos-1]->direccion_logica=usb2->montaje;
+          iterar(nombrados);
+          sprintf(jsonresp,"{\"solicitud\": \"nombrar_dispositivo\", \"nombre\":\"%s\" , \n"
+              "\"nodo\":\"%s\" ,\"status\": \"0\", \"str_error\" : 0}",nombrados[elementos-1]->nombre,nombrados[elementos-1]->direccion_fisica);
+          return send_response (connection, jsonresp, MHD_HTTP_OK);
+        }else{
+          sprintf(jsonresp,"{\"solicitud\": \"nombrar_dispositivo\", \n"
+            "\"status\": \"-1 \",\"str_error\" :\"error : formato json erroneo \" }");
+          return send_response (connection, jsonresp,400); 
+        }
+      }else{
+        if(strlen(respuestadaemon)>=2){
+          sprintf(jsonresp,"{\"solicitud\": \"nombrar_dispositivo\", \n"
+            "\"status\": \"-1 \", %s}",respuestadaemon);
+          return send_response (connection, jsonresp,400); 
+        }else{
+          sprintf(jsonresp,"{\"solicitud\": \"nombrar_dispositivo\", \n"
+            "\"status\": \"-1 \",\"str_error\" :\"no existen dispositivos actualmente conectados\" }");
+          return send_response (connection, jsonresp,400); 
+        }
+      }   
+    }
+  }else if (0 == strcmp (method, "POST") && !strncasecmp(url, "/escribir_archivo", 17)){
+    struct manejoColaJson *cola = NULL;
+    cola = (struct manejoColaJson*)*con_cls;
+    if(cola == NULL) {
+      cola = malloc(sizeof(struct manejoColaJson));
+      cola->info = 0;
+      *con_cls = cola;
+      return MHD_YES;
+    }
+    if(*upload_data_size != 0) {
+      cola->stringjson= malloc(*upload_data_size + 1);
+      strncpy(cola->stringjson, upload_data, *upload_data_size);
+      *upload_data_size = 0;
+      return MHD_YES;
+    }else {
+      printf ("\nNueva  %s solicitud en  %s con  version %s \n", method, url, version);
+      MHD_get_connection_values (connection, MHD_HEADER_KIND, iterar_encabezado,NULL);
+      printf ("obteniendo json con información........\n");
+      char * solicitud=jsonEscribir(cola->stringjson);
+      if(strstr(solicitud, "str_error")!=NULL){
+        sprintf(jsonresp,"{\"solicitud\": \"escribir_dispositivo\", \n"
+          "\"status\": \"-1 \", %s }",solicitud);
+        return send_response (connection, jsonresp,404); 
+      }
+      printf ("\n\ncompleto procesamiento json.... enviando al daemon........\n");
+      char *respuestadaemon=init_cliente(solicitud);
+      if(strstr(respuestadaemon, "str_error")==NULL){
+      //no hay errores desde el daemon el daemon me devuelve el json hasta sin los campos status , ni str_error,sin coma
+        sprintf(jsonresp,"%s,\"status\": \"0\", \"str_error\" : 0}",respuestadaemon);
+        return send_response (connection, jsonresp, MHD_HTTP_OK);
+      }else{
+        sprintf(jsonresp,"{\"solicitud\": \"escribir_dispositivo\", \n"
+          "\"status\": \"-1 \",%s }",respuestadaemon);
+        return send_response (connection, jsonresp,400); 
+      }
+    }
+  }//sino ninguna de las solicitudes anteriores debe retorna mensaje que no existe 
+  else{
+  //404 Not Found
+    printf ("\nNueva  %s solicitud en  %s con  version %s \n", method, url, version);
+    MHD_get_connection_values (connection, MHD_HEADER_KIND, iterar_encabezado,NULL);
+    char * resp="\"str_error\":\"ERROR 404 Not Found\"";
+    sprintf(jsonresp,"{\"solicitud\": \"%s\", \n"
+      "\"status\": \" -1\", %s }",url,resp);
+    int r=send_response (connection, jsonresp,404); 
+    printf("%d \n",r) ;
+    return r;
+  }
+  return MHD_NO;
 }
 
 int main (int argc, char *argv[])
