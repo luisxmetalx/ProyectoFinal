@@ -209,7 +209,7 @@ char* Disp(char *direccion_fisica){
 	endmntent(fp);
 	return  "no se encuentra montado dicho dispositivo";
 }
-char* tokenizarescribir(char* solicitud){
+char* Split_Writing(char* solicitud){
 	char* lista[6];
    const char delimitadores[2] = "|";
    char *token;
@@ -227,7 +227,7 @@ char* tokenizarescribir(char* solicitud){
    return concat_str;
 }
 
-char* tokenizarleer(char* solicitud){
+char* Split_Reading(char* solicitud){
 	char* lista[6];
     const char delimitadores[2] = "|";
 	char *token;
@@ -282,18 +282,28 @@ void ListenRequestClient(){
 			char* lista=ListarDispAlmMasivo(udeva);
 		    send(clienteFd,lista,strlen(lista),0);
 		    close(clienteFd);
-		}else if((strstr(solicitud, "escribir") != NULL) ){
+		}else if((strstr(solicitud, "escribir_archivo") != NULL) ){
 			char* cadenaLarga=malloc(BUFF_DISP*sizeof(char *));
 			 memset(cadenaLarga,0,BUFF_DISP);
 			recv(clienteFd, cadenaLarga,BUFF_DISP, 0);
 			char* respuesta=malloc(BUFLEN*sizeof(char *));
 			 memset(respuesta,0,BUFLEN);
-			respuesta=tokenizarescribir(cadenaLarga);
+			respuesta=Split_Writing(cadenaLarga);
 			send(clienteFd,respuesta,BUFLEN,0);
 			close(clienteFd);
 		}
+		else if((strstr(solicitud, "leer_archivo") != NULL) ){
+			char* cadenaLarga=malloc(BUFF_DISP*sizeof(char *));
+			 memset(cadenaLarga,0,BUFF_DISP);
+			recv(clienteFd, cadenaLarga,BUFF_DISP, 0);
+			char* respuesta=malloc(BUFLEN*sizeof(char *));
+			 memset(respuesta,0,BUFLEN);
+			respuesta=Split_Reading(cadenaLarga);
+			send(clienteFd,respuesta,BUFLEN,0);
+			close(clienteFd);
 		}
-		close(clienteFd);
+	}
+	close(clienteFd);
 	
 }
 

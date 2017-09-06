@@ -20,35 +20,12 @@
 #include <netinet/in.h>
 #include <arpa/inet.h>
 #include <sys/resource.h>
-#define MAXSLEEP        1
+#define MAXSLEEP 10
 #define TAMANO 25
-#define POSTBUFFERSIZE  512
+#define POSTLEN  512
 #define BUFLEN 1024
-#define BUFFERING 100000
+#define BUFF_DISP 100000
 
-struct USBlista{
-  char* nombre;
-  char* nodo;
-  char* montaje;
-  char* sci;
-  char* VendoridProduct;
-};
-struct manejoColaJson{
-  char* info;
-  char* stringjson;
-};
-struct NameUSB{
-    char* nombre;
-    char* direccion_fisica;
-    char* direccion_logica;
-};
-  
-  struct NameUSB* nombrados[TAMANO];
-  int elementos=0;
-
-  struct USBlista* usblista[TAMANO];   //donde se almacena un historial de todos los dispositivos conectados.
-  int usbelementos=0;
-  
   int reconnect( int domain, int type, int protocol,  const struct sockaddr *addr, socklen_t alen){
     int fd; 
     for (int numsec = 1; numsec <= MAXSLEEP; numsec++) { 
@@ -96,9 +73,9 @@ char* init_cliente(char *request){
       send(sockfd,request,BUFLEN,0);
       printf("Solicitud enviada proceso daemon:\n %s \n",request);
       printf("Procesando respuesta daemon\n");
-      char *file = malloc(BUFFERING*sizeof(char *));
-      memset(file,0,BUFFERING);
-      if((rec=recv(sockfd, file, BUFFERING,0))>0){
+      char *file = malloc(BUFF_DISP*sizeof(char *));
+      memset(file,0,BUFF_DISP);
+      if((rec=recv(sockfd, file, BUFF_DISP,0))>0){
         if (strstr(file, "ERROR") != NULL) {
           printf("ERROR: respuesta daemon fallida\n");
           close(sockfd);
@@ -120,7 +97,17 @@ char* init_cliente(char *request){
     return -1;
   }
 
-  static int jsonlimpio(const char *json, jsmntok_t *tok, const char *s) {
+  struct NameUSB{
+    char* nombre;
+    char* direccion_fisica;
+    char* direccion_logica;
+};
+  
+  struct NameUSB* nombrados[TAMANO];
+  int elementos=0;
+
+
+  static int JsonEmpty(const char *json, jsmntok_t *tok, const char *s) {
     if (tok->type == JSMN_STRING && (int) strlen(s) == tok->end - tok->start &&
         strncmp(json + tok->start, s, tok->end - tok->start) == 0) {
       return 0;
@@ -128,31 +115,42 @@ char* init_cliente(char *request){
     return -1;
   }
 
-  char* jsonombrar(const char *upload_data) {//jasonombrar
-    char *elementolista=malloc(sizeof(char)*(POSTBUFFERSIZE));  
+  struct InfoUSB{
+    char* nombre;
+    char* nodo;
+    char* montaje;
+    char* sci;
+    char* VendoridProduct;
+  };
+  
+  struct InfoUSB* usblista[TAMANO];
+  int usbelementos=0;
+
+  char* jsonombrar(const char *loadate) {//jasonombrar
+    char *elementolista=malloc(sizeof(char)*(POSTLEN));  
     int r,i;
     jsmn_parser p;
-    jsmntok_t t[POSTBUFFERSIZE]; 
+    jsmntok_t t[POSTLEN]; 
     jsmn_init(&p);
-    char* nodo=malloc(sizeof(char)*(POSTBUFFERSIZE));
-    char* nombre=malloc(sizeof(char)*(POSTBUFFERSIZE));
-    char* upload_datas=malloc(sizeof(char)*(strlen( upload_data)-2));
-    memset(upload_datas,0,strlen( upload_data)-2);
+    char* nodo=malloc(sizeof(char)*(POSTLEN));
+    char* nombre=malloc(sizeof(char)*(POSTLEN));
+    char* new_data=malloc(sizeof(char)*(strlen( loadate)-2));
+    memset(new_data,0,strlen( loadate)-2);
         int j=0;
-        for(int i=0;i<strlen(upload_data);i++){
-          if(upload_data[i]=='{' && j==0){
-            while(upload_data[i]!='}'){
-              upload_datas[j]=upload_data[i];
+        for(int i=0;i<strlen(loadate);i++){
+          if(loadate[i]=='{' && j==0){
+            while(loadate[i]!='}'){
+              new_data[j]=loadate[i];
               i++;
               j++;
             }
-            upload_datas[j]=upload_data[i];
+            new_data[j]=loadate[i];
           }
         }
     char * re=malloc((j-1)*sizeof(char *));
     memset(re,0,j-1);
-    re=upload_datas;
-    r = jsmn_parse(&p,  re, strlen(re), t, POSTBUFFERSIZE);
+    re=new_data;
+    r = jsmn_parse(&p,  re, strlen(re), t, POSTLEN);
     printf ("\nprocesando contenido del json.....\n");
     printf("%d,%s",r,re);
     if (r < 0) {
@@ -162,14 +160,14 @@ char* init_cliente(char *request){
       return NULL;
     }
       for (i = 1; i < r; i++) {
-        if (jsonequals( upload_datas, &t[i], "nodo") == 0) {
-          sprintf(nodo,"%.*s",t[i+1].end-t[i+1].start-4, upload_datas + t[i+1].start+2);      
-          printf("\n - %s: %.*s\n", "nodo",t[i+1].end-t[i+1].start-4, upload_datas + t[i+1].start+2);
+        if (jsonequals( new_data, &t[i], "nodo") == 0) {
+          sprintf(nodo,"%.*s",t[i+1].end-t[i+1].start-4, new_data + t[i+1].start+2);      
+          printf("\n - %s: %.*s\n", "nodo",t[i+1].end-t[i+1].start-4, new_data + t[i+1].start+2);
           i++;
         }
-        if (jsonequals( upload_datas, &t[i], "nombre") == 0) {
-          sprintf(nombre,"%.*s",t[i+1].end-t[i+1].start-4, upload_datas + t[i+1].start+2);      
-          printf("\n - %s: %.*s\n", "nombre",t[i+1].end-t[i+1].start-4, upload_datas + t[i+1].start+2);
+        if (jsonequals( new_data, &t[i], "nombre") == 0) {
+          sprintf(nombre,"%.*s",t[i+1].end-t[i+1].start-4, new_data + t[i+1].start+2);      
+          printf("\n - %s: %.*s\n", "nombre",t[i+1].end-t[i+1].start-4, new_data + t[i+1].start+2);
           i++;
         }      
       }
@@ -182,7 +180,7 @@ char* init_cliente(char *request){
     return elementolista;
   }
 
-char* obtenerDireccion(char* nombre){
+char* DireccionUSB(char* nombre){
     if(elementos==0) {
       printf("No existe algun dispositivo nombrado.\n");
       return"\"str_error\":\"ERROR: No existe algun dispositivo nombrado.\"\n";
@@ -195,9 +193,9 @@ char* obtenerDireccion(char* nombre){
     printf("No existe algun dispositivo nombrado con ese nombre.\n");
     return"\"str_error\":\"ERROR:No existe algun dispositivo nombrado con ese nombre. \""; 
 }
-char* jsonEscribir(const char *upload_data) {
-  char *elementolista=malloc(sizeof(char)*(BUFFERING)); 
-  memset(elementolista,0,BUFFERING);
+char* jsonEscribir(const char *loadate) {
+  char *elementolista=malloc(sizeof(char)*(BUFF_DISP)); 
+  memset(elementolista,0,BUFF_DISP);
   int r,i;
   jsmn_parser p;
   jsmntok_t t[BUFLEN]; 
@@ -207,22 +205,22 @@ char* jsonEscribir(const char *upload_data) {
   char *solicitud=malloc(sizeof(char)*(BUFLEN));
   char *tamano_contenido=malloc(sizeof(char)*(BUFLEN));
   int tamano;
-  char* upload_datas=malloc(sizeof(char)*(strlen( upload_data)-2));
-  memset(upload_datas,0,strlen( upload_data)-2);
+  char* new_data=malloc(sizeof(char)*(strlen( loadate)-2));
+  memset(new_data,0,strlen( loadate)-2);
   int j=0;
-  for(int i=0;i<strlen(upload_data);i++){
-    if(upload_data[i]=='{' && j==0){
-      while(upload_data[i]!='}'){
-        upload_datas[j]=upload_data[i];
+  for(int i=0;i<strlen(loadate);i++){
+    if(loadate[i]=='{' && j==0){
+      while(loadate[i]!='}'){
+        new_data[j]=loadate[i];
         i++;
         j++;
       }
-      upload_datas[j]=upload_data[i];
+      new_data[j]=loadate[i];
     }
   }
   char * re=malloc((j-1)*sizeof(char *));
   memset(re,0,j-1);
-  re=upload_datas;
+  re=new_data;
   r = jsmn_parse(&p,  re, strlen(re), t, 128);
   printf ("\nprocesando contenido del json.....\n");
   printf("json recibido %d:\n %s \n",r,re);
@@ -230,52 +228,52 @@ char* jsonEscribir(const char *upload_data) {
   if (r < 0) return NULL;
   if (r < 1 || t[0].type != JSMN_OBJECT) return NULL;
   for (i = 1; i < r; i++) {
-    if (jsonlimpio( upload_datas, &t[i], "nombre_archivo") == 0) {
-      sprintf(nombre_archivo,"%.*s",t[i+1].end-t[i+1].start, upload_datas + t[i+1].start);      
-      printf("\n - %s: %.*s", "nombre_archivo",t[i+1].end-t[i+1].start, upload_datas + t[i+1].start);
+    if (JsonEmpty( new_data, &t[i], "nombre_archivo") == 0) {
+      sprintf(nombre_archivo,"%.*s",t[i+1].end-t[i+1].start,new_data + t[i+1].start);      
+      printf("\n - %s: %.*s", "nombre_archivo",t[i+1].end-t[i+1].start, new_data + t[i+1].start);
       i++;
       sprintf(elementolista,"%s",nombre_archivo); 
     }
   }
   for (i = 1; i < r; i++) {
-    if (jsonlimpio( upload_datas, &t[i], "nombre") == 0) {
-      sprintf(nombre,"%.*s",t[i+1].end-t[i+1].start, upload_datas + t[i+1].start);      
-      printf("\n - %s: %.*s", "nombre",t[i+1].end-t[i+1].start, upload_datas + t[i+1].start);
+    if (JsonEmpty( new_data, &t[i], "nombre") == 0) {
+      sprintf(nombre,"%.*s",t[i+1].end-t[i+1].start, new_data + t[i+1].start);      
+      printf("\n - %s: %.*s", "nombre",t[i+1].end-t[i+1].start, new_data + t[i+1].start);
       i++;
     }
-    if (jsonlimpio( upload_datas, &t[i], "tamano_contenido") == 0) {
-      sprintf(tamano_contenido,"%.*s",t[i+1].end-t[i+1].start, upload_datas + t[i+1].start);      
-      printf("\n - %s: %.*s", "tamano_contenido",t[i+1].end-t[i+1].start, upload_datas + t[i+1].start);
+    if (JsonEmpty( new_data, &t[i], "tamano_contenido") == 0) {
+      sprintf(tamano_contenido,"%.*s",t[i+1].end-t[i+1].start, new_data + t[i+1].start);      
+      printf("\n - %s: %.*s", "tamano_contenido",t[i+1].end-t[i+1].start, new_data + t[i+1].start);
       i++;
       sprintf(elementolista,"%s|%s",elementolista,tamano_contenido); 
     }
-    if (jsonlimpio( upload_datas, &t[i], "solicitud") == 0) {
-      sprintf(solicitud,"%.*s",t[i+1].end-t[i+1].start, upload_datas + t[i+1].start);      
-      printf("\n - %s: %.*s", "solicitud",t[i+1].end-t[i+1].start, upload_datas + t[i+1].start);
+    if (JsonEmpty( new_data, &t[i], "solicitud") == 0) {
+      sprintf(solicitud,"%.*s",t[i+1].end-t[i+1].start, new_data + t[i+1].start);      
+      printf("\n - %s: %.*s", "solicitud",t[i+1].end-t[i+1].start, new_data + t[i+1].start);
       i++;
       sprintf(elementolista,"%s|%s",elementolista,solicitud); 
     }
   }
   for (i = 1; i < r; i++) {
-    if (jsonlimpio( upload_datas, &t[i], "contenido") == 0) {
+    if (JsonEmpty( new_data, &t[i], "contenido") == 0) {
       tamano=atoi(tamano_contenido);
       char *contenido=malloc(sizeof(char)*(tamano));
-      sprintf(contenido,"%.*s",t[i+1].end-t[i+1].start, upload_datas + t[i+1].start);      
-      //printf("\n - %s: %.*s", "contenido",t[i+1].end-t[i+1].start, upload_datas + t[i+1].start);
+      sprintf(contenido,"%.*s",t[i+1].end-t[i+1].start, new_data + t[i+1].start);      
+      printf("\n - %s: %.*s", "contenido",t[i+1].end-t[i+1].start, new_data + t[i+1].start);
       i++;
       sprintf(elementolista,"%s|%s",elementolista,contenido); 
     }
   }
-  char* direccion=obtenerDireccion(nombre);
+  char* direccion=DireccionUSB(nombre);
   if(strstr(direccion, "str_error")!=NULL) return direccion;
   printf("\n%d\n",(int)strlen(direccion) );
   sprintf(elementolista,"%s|%s|%s|",elementolista,nombre,direccion); 
   return elementolista;  
 }
 
-char* jsonLeer(const char *upload_data) {
-  char *elementolista=malloc(sizeof(char)*(BUFFERING)); 
-  memset(elementolista,0,BUFFERING);
+char* jsonLeer(const char *loadate) {
+  char *elementolista=malloc(sizeof(char)*(BUFF_DISP)); 
+  memset(elementolista,0,BUFF_DISP);
   int r,i;
   jsmn_parser p;
   jsmntok_t t[BUFLEN]; 
@@ -283,22 +281,22 @@ char* jsonLeer(const char *upload_data) {
   char* nombre_archivo=malloc(sizeof(char)*(BUFLEN));
   char* nombre=malloc(sizeof(char)*(BUFLEN));
   char* solicitud=malloc(sizeof(char)*(BUFLEN));
-  char* upload_datas=malloc(sizeof(char)*(strlen( upload_data)-2));
-  memset(upload_datas,0,strlen( upload_data)-2);
+  char* new_data=malloc(sizeof(char)*(strlen( loadate)-2));
+  memset(new_data,0,strlen( loadate)-2);
   int j=0;
-  for(int i=0;i<strlen(upload_data);i++){
-    if(upload_data[i]=='{' && j==0){
-      while(upload_data[i]!='}'){
-        upload_datas[j]=upload_data[i];
+  for(int i=0;i<strlen(loadate);i++){
+    if(loadate[i]=='{' && j==0){
+      while(loadate[i]!='}'){
+        new_data[j]=loadate[i];
         i++;
         j++;
       }
-      upload_datas[j]=upload_data[i];
+      new_data[j]=loadate[i];
     }
   }
   char * re=malloc((j-1)*sizeof(char *));
   memset(re,0,j-1);
-  re=upload_datas;
+  re=new_data;
   r = jsmn_parse(&p,  re, strlen(re), t, 128);
   printf ("\nprocesando contenido del json.....\n");
   printf("json recibido %d:\n %s \n",r,re);
@@ -306,27 +304,27 @@ char* jsonLeer(const char *upload_data) {
   if (r < 0) return NULL;
   if (r < 1 || t[0].type != JSMN_OBJECT) return NULL;
   for (i = 1; i < r; i++) {
-    if (jsonlimpio( upload_datas, &t[i], "nombre_archivo") == 0) {
-      sprintf(nombre_archivo,"%.*s",t[i+1].end-t[i+1].start, upload_datas + t[i+1].start);      
-      printf("\n - %s: %.*s", "nombre_archivo",t[i+1].end-t[i+1].start, upload_datas + t[i+1].start);
+    if (JsonEmpty(new_data, &t[i], "nombre_archivo") == 0) {
+      sprintf(nombre_archivo,"%.*s",t[i+1].end-t[i+1].start, new_data + t[i+1].start);      
+      printf("\n - %s: %.*s", "nombre_archivo",t[i+1].end-t[i+1].start, new_data + t[i+1].start);
       i++;
       sprintf(elementolista,"%s",nombre_archivo); 
     }
   }
   for (i = 1; i < r; i++) {
-    if (jsonlimpio( upload_datas, &t[i], "nombre") == 0) {
-      sprintf(nombre,"%.*s",t[i+1].end-t[i+1].start, upload_datas + t[i+1].start);      
-      printf("\n - %s: %.*s", "nombre",t[i+1].end-t[i+1].start, upload_datas + t[i+1].start);
+    if (JsonEmpty(new_data, &t[i], "nombre") == 0) {
+      sprintf(nombre,"%.*s",t[i+1].end-t[i+1].start,new_data + t[i+1].start);      
+      printf("\n - %s: %.*s", "nombre",t[i+1].end-t[i+1].start,new_data + t[i+1].start);
       i++;
     }
-    if (jsonlimpio( upload_datas, &t[i], "solicitud") == 0) {
-      sprintf(solicitud,"%.*s",t[i+1].end-t[i+1].start, upload_datas + t[i+1].start);      
-      printf("\n - %s: %.*s", "solicitud",t[i+1].end-t[i+1].start, upload_datas + t[i+1].start);
+    if (JsonEmpty( new_data, &t[i], "solicitud") == 0) {
+      sprintf(solicitud,"%.*s",t[i+1].end-t[i+1].start,new_data + t[i+1].start);      
+      printf("\n - %s: %.*s", "solicitud",t[i+1].end-t[i+1].start,new_data+ t[i+1].start);
       i++;
       sprintf(elementolista,"%s|%s",elementolista,solicitud); 
     }
   }
-  char* direccion=obtenerDireccion(nombre);
+  char* direccion=DireccionUSB(nombre);
   if(strstr(direccion, "str_error")!=NULL) return direccion;
   printf("\n%d\n",(int)strlen(direccion) );
   sprintf(elementolista,"%s|%s|%s|",elementolista,nombre,direccion); 
@@ -334,18 +332,18 @@ char* jsonLeer(const char *upload_data) {
 }
 
 
-int jsonlistar(const char *upload_data, int cantparametros, const char *s[]) {//precjson
+int jsonlistar(const char *loadate, int cantparametros, const char *s[]) {//precjson
   int r,i;
   jsmn_parser p;
-  jsmntok_t t[POSTBUFFERSIZE]; 
+  jsmntok_t t[POSTLEN]; 
   jsmn_init(&p);
-  char* upload_datas=malloc(sizeof(char)*(strlen( upload_data)));
+  char* new_data=malloc(sizeof(char)*(strlen( loadate)));
   int j=0;
-  for(int i=0;i<strlen(upload_data);i++){
-    if(upload_data[i]=='{' && j==0){
+  for(int i=0;i<strlen(loadate);i++){
+    if(loadate[i]=='{' && j==0){
       i++;
-      while(upload_data[i]!='}'){
-        upload_datas[j]=upload_data[i];
+      while(loadate[i]!='}'){
+        new_data[j]=loadate[i];
         i++;
         j++;
       }
@@ -353,8 +351,8 @@ int jsonlistar(const char *upload_data, int cantparametros, const char *s[]) {//
   }
   char * re=malloc((j-1)*sizeof(char *));
   memset(re,0,j-1);
-  re=upload_datas;
-  r = jsmn_parse(&p,  re, strlen(re), t, POSTBUFFERSIZE);
+  re=new_data;
+  r = jsmn_parse(&p,  re, strlen(re), t, POSTLEN);
   printf ("\nProcesando contenido del json.....\n");
   if (r < 0) {
     printf("Fallido parsing JSON: %d\n", r);
@@ -366,8 +364,8 @@ int jsonlistar(const char *upload_data, int cantparametros, const char *s[]) {//
   }
   for(int token=0;token < cantparametros; token++){
     for (i = 1; i < r; i++) {
-      if (jsonequals( upload_datas, &t[i], s[token]) == 0) {
-        printf("- %s: %.*s\n", s[token],t[i+1].end-t[i+1].start-4, upload_datas + t[i+1].start+2);
+      if (jsonequals(new_data, &t[i], s[token]) == 0) {
+        printf("- %s: %.*s\n", s[token],t[i+1].end-t[i+1].start-4,new_data + t[i+1].start+2);
         i++;
       }
     }
@@ -375,15 +373,15 @@ int jsonlistar(const char *upload_data, int cantparametros, const char *s[]) {//
   return 1;
 }
       
-static int iterar_encabezado (void *cls, enum MHD_ValueKind kind, const char *key, const char *value){
+static int Headers_Interator (void *cls, enum MHD_ValueKind kind, const char *key, const char *value){
   printf ("Encabezado %s: %s\n", key, value);
   return MHD_YES;
 }
 
 void iterar(struct NameUSB *lista[]){
-  printf("\n  VIRTUAL SERVIDOR DE DISPOSITIVO NOMBRADOS. \n");
+  printf("\nDISPOSITIVO NOMBRADOS\n");
   if(elementos==0) {
-    printf("Lista vacia.No hay dispositivo USB nombrados. \n");
+    printf("Lista vacia.No hay dispositivo USB nombrados.\n");
     return;
   }
   for (int i = 0; i < elementos; i++) {     
@@ -391,10 +389,10 @@ void iterar(struct NameUSB *lista[]){
       }
 }
       
-void iterarlistado(struct USBlista *lista[]){
-  printf("\n HISTORIAL VIRTUAL SERVIDOR DE DISPOSITIVO . \n");
+void iterarlistado(struct InfoUSB *lista[]){
+  printf("\nHISTORIAL DE DISPOSITIVOS\n");
   if(usbelementos==0) {
-    printf("Lista vacia.No hay dispositivo USB . \n");
+    printf("Lista vacia.No hay dispositivo USB.\n");
     return;
   }
   for (int i = 0; i < usbelementos; i++) {     
@@ -402,7 +400,7 @@ void iterarlistado(struct USBlista *lista[]){
   }
 }
 
-void procesandolistaUSB(const char *upload_data) {
+void ListaUSB(const char *loadate) {
   int r,i;
   jsmn_parser p;
   jsmntok_t t[128]; 
@@ -412,23 +410,23 @@ void procesandolistaUSB(const char *upload_data) {
   char *montaje=malloc(sizeof(char)*(50));
   char *sci=malloc(sizeof(char)*(50));
   char *VendoridProduct=malloc(sizeof(char)*(50));
-  char* upload_datas=malloc(sizeof(char)*(strlen( upload_data)-2));
-  memset(upload_datas,0,strlen( upload_data)-2);
+  char* new_data=malloc(sizeof(char)*(strlen( loadate)-2));
+  memset(new_data,0,strlen( loadate)-2);
   int j=0;
-  for(int i=0;i<strlen(upload_data);i++){
-    if(upload_data[i]=='{' && j==0){
-      while(upload_data[i]!='}'){
-        upload_datas[j]=upload_data[i];
+  for(int i=0;i<strlen(loadate);i++){
+    if(loadate[i]=='{' && j==0){
+      while(loadate[i]!='}'){
+        new_data[j]=loadate[i];
         i++;
         j++;
       }
-      upload_datas[j]=upload_data[i];
+      new_data[j]=loadate[i];
     }
   }
   char * re=malloc((j-1)*sizeof(char *));
   memset(re,0,j-1);
-  re=upload_datas;
-  r = jsmn_parse(&p,  upload_data, strlen(upload_data), t, 128);
+  re=new_data;
+  r = jsmn_parse(&p,  loadate, strlen(loadate), t, 128);
   if (r < 0) {
     return ;
   }
@@ -436,28 +434,28 @@ void procesandolistaUSB(const char *upload_data) {
     return ;
   }
   for (i = 1; i < r; i++) {
-    if (jsonlimpio( upload_data, &t[i], "nombre") == 0) {
-      sprintf(nombre,"%.*s",t[i+1].end-t[i+1].start, upload_datas + t[i+1].start);      
+    if (JsonEmpty( loadate, &t[i], "nombre") == 0) {
+      sprintf(nombre,"%.*s",t[i+1].end-t[i+1].start, new_data + t[i+1].start);      
       i++;
     }
-    if (jsonlimpio( upload_data, &t[i], "nodo") == 0) {
-      sprintf(nodo,"%.*s",t[i+1].end-t[i+1].start, upload_datas + t[i+1].start);      
+    if (JsonEmpty( loadate, &t[i], "nodo") == 0) {
+      sprintf(nodo,"%.*s",t[i+1].end-t[i+1].start, new_data + t[i+1].start);      
       i++;
     }
-    if (jsonlimpio( upload_data, &t[i], "montaje") == 0) {
-      sprintf(montaje,"%.*s",t[i+1].end-t[i+1].start, upload_datas + t[i+1].start);      
+    if (JsonEmpty( loadate, &t[i], "montaje") == 0) {
+      sprintf(montaje,"%.*s",t[i+1].end-t[i+1].start, new_data + t[i+1].start);      
       i++;
     }  
-    if (jsonlimpio( upload_data, &t[i], "scsi") == 0) {
-      sprintf(sci,"%.*s",t[i+1].end-t[i+1].start, upload_datas + t[i+1].start);      
+    if (JsonEmpty( loadate, &t[i], "scsi") == 0) {
+      sprintf(sci,"%.*s",t[i+1].end-t[i+1].start,new_data+ t[i+1].start);      
       i++;
     }  
-    if (jsonlimpio( upload_data, &t[i], "Vendor:idProduct") == 0) {
-      sprintf(VendoridProduct,"%.*s",t[i+1].end-t[i+1].start, upload_datas + t[i+1].start);      
+    if (JsonEmpty( loadate, &t[i], "Vendor:idProduct") == 0) {
+      sprintf(VendoridProduct,"%.*s",t[i+1].end-t[i+1].start, new_data + t[i+1].start);      
       i++;
     }         
   }
- struct USBlista *usb2=malloc(sizeof(struct USBlista));
+ struct InfoUSB *usb2=malloc(sizeof(struct InfoUSB));
   usb2->nombre=nombre;
   usb2->nodo=nodo;
   usb2->montaje=montaje;
@@ -468,8 +466,12 @@ void procesandolistaUSB(const char *upload_data) {
   return;
 }
 
-//cuando existen dos o mas dispositivos conectados permite dividir el json.
-void tokenizarsolicitud(char* listausb){
+struct ColaJson{
+  char* info;
+  char* stringjson;
+};
+
+void Split_Request(char* listausb){
   char* usb1=malloc(BUFLEN*sizeof(char*));
   if(strstr(listausb,"},")>0){
     const char delimitadores[2] = "}";
@@ -479,10 +481,10 @@ void tokenizarsolicitud(char* listausb){
     while( token != NULL ) {
       sprintf(usb1,"%s}",token);
       if(i>0){
-      procesandolistaUSB(usb1+1);
+      ListaUSB(usb1+1);
       printf("%s\n", usb1+1);
       }else{
-      procesandolistaUSB(usb1);
+      ListaUSB(usb1);
       printf("%s\n", usb1);
       i++;
     }
@@ -490,12 +492,11 @@ void tokenizarsolicitud(char* listausb){
       
    }
   }else{
-    procesandolistaUSB(listausb);
+    ListaUSB(listausb);
   }
 }
 
-//permite asignar un nombre tanto en la lista de historial como en la lista de dispositivos nombrados.
-struct USBlista* asignarnombre(char * solicitud){
+struct InfoUSB* ApodoUSB(char * solicitud){
   char * respx=malloc(8*sizeof(char *));
   char * resp2=malloc(20*sizeof(char *));
     int j=0,z=0,w=0;
@@ -542,15 +543,15 @@ static int send_response(struct MHD_Connection *connection, const char *page, in
   }
       
 int answer_to_connection (void *cls, struct MHD_Connection *connection, const char *url, const char *method, const char *version,
-                                const char *upload_data, size_t *upload_data_size, void **con_cls){
-    char* jsonresp=malloc(BUFFERING*sizeof(char *));
-    memset(jsonresp,0,BUFFERING);
-    char* solicitud=malloc(BUFFERING*sizeof(char *));
-    memset(solicitud,0,BUFFERING);
+                                const char *loadate, size_t *loadate_size, void **con_cls){
+    char* jsonresp=malloc(BUFF_DISP*sizeof(char *));
+    memset(jsonresp,0,BUFF_DISP);
+    char* solicitud=malloc(BUFF_DISP*sizeof(char *));
+    memset(solicitud,0,BUFF_DISP);
     if (0 == strcmp (method,MHD_HTTP_METHOD_GET)  && !strncasecmp(url, "/listar_dispositivos", 19)){
         sprintf(solicitud, "%s-%s",method,"listar_dispositivos");
         printf ("\nNueva  %s solicitud en  %s con  version %s \n", method, url, version);
-        MHD_get_connection_values (connection, MHD_HEADER_KIND, iterar_encabezado,NULL);
+        MHD_get_connection_values (connection, MHD_HEADER_KIND, Headers_Interator,NULL);
         char *resp=init_cliente(solicitud);
         if(strstr(resp, "str_error")!=NULL ){
           sprintf(jsonresp,"{\"solicitud\": \"listar_dispositivos\", \n"
@@ -564,41 +565,41 @@ int answer_to_connection (void *cls, struct MHD_Connection *connection, const ch
           }else{
             sprintf(jsonresp,"{\"solicitud\": \"listar_dispositivos\", \"dispositivos\": [%s ], \n"
                             "\"status\": \"0\", \"str_error\" : 0}",resp);
-            tokenizarsolicitud(resp);
+            Split_Request(resp);
             iterarlistado(usblista);
             return send_response (connection, jsonresp, MHD_HTTP_OK);
           }
         }
     }
     else if (0 == strcmp (method, "POST") && !strncasecmp(url, "/nombrar_dispositivo", 17)){
-    struct manejoColaJson *cola = NULL;
-    cola = (struct manejoColaJson*)*con_cls;
+    struct ColaJson *cola = NULL;
+    cola = (struct ColaJson*)*con_cls;
     if(cola == NULL) {
-      cola = malloc(sizeof(struct manejoColaJson));
+      cola = malloc(sizeof(struct ColaJson));
       cola->info = 0;
       *con_cls = cola;
       return MHD_YES;
     }
-    if(*upload_data_size != 0) {
-      cola->stringjson= malloc(*upload_data_size + 1);
-      strncpy(cola->stringjson, upload_data, *upload_data_size);
-      *upload_data_size = 0;
+    if(*loadate_size != 0) {
+      cola->stringjson= malloc(*loadate_size + 1);
+      strncpy(cola->stringjson, loadate, *loadate_size);
+      *loadate_size = 0;
       return MHD_YES;
     }else {
       printf ("\nNueva  %s solicitud en  %s con  version %s \n", method, url, version);
       iterar(nombrados);
-      MHD_get_connection_values (connection, MHD_HEADER_KIND, iterar_encabezado,NULL);
+      MHD_get_connection_values (connection, MHD_HEADER_KIND, Headers_Interator,NULL);
       printf ("obteniendo json con información............\n");
       sprintf(solicitud, "%s-%s","GET","listar_dispositivos");
       char *respuestadaemon=init_cliente(solicitud);
       if(strstr(respuestadaemon, "str_error")==NULL && strlen(respuestadaemon)>=2){
-        tokenizarsolicitud(respuestadaemon);
+        Split_Request(respuestadaemon);
         char * resp=jsonombrar(cola->stringjson);
         if(resp!=NULL){
-          char *nuevo=malloc(BUFFERING*sizeof(char *));
+          char *nuevo=malloc(BUFF_DISP*sizeof(char *));
           sprintf(nuevo, "%s-%s","obtenerdireccion",resp);
-          struct USBlista *usb2=malloc(sizeof(struct USBlista));
-          usb2=asignarnombre(nuevo);
+          struct InfoUSB *usb2=malloc(sizeof(struct InfoUSB));
+          usb2=ApodoUSB(nuevo);
           nombrados[elementos-1]->direccion_logica=usb2->montaje;
           iterar(nombrados);
           sprintf(jsonresp,"{\"solicitud\": \"nombrar_dispositivo\", \"nombre\":\"%s\" , \n"
@@ -622,22 +623,22 @@ int answer_to_connection (void *cls, struct MHD_Connection *connection, const ch
       }   
     }
   }  else if (0 == strcmp (method, "GET") && !strncasecmp(url, "/leer_archivo", 13)){
-    struct manejoColaJson *cola = NULL;
-    cola = (struct manejoColaJson*)*con_cls;
+    struct ColaJson *cola = NULL;
+    cola = (struct ColaJson*)*con_cls;
     if(cola == NULL) {
-      cola = malloc(sizeof(struct manejoColaJson));
+      cola = malloc(sizeof(struct ColaJson));
       cola->info = 0;
       *con_cls = cola;
       return MHD_YES;
     }
-    if(*upload_data_size != 0) {
-      cola->stringjson= malloc(*upload_data_size + 1);
-      strncpy(cola->stringjson, upload_data, *upload_data_size);
-      *upload_data_size = 0;
+    if(*loadate_size != 0) {
+      cola->stringjson= malloc(*loadate_size + 1);
+      strncpy(cola->stringjson, loadate, *loadate_size);
+      *loadate_size = 0;
       return MHD_YES;
     }else {
       printf ("\nNueva  %s solicitud en  %s con  version %s \n", method, url, version);
-      MHD_get_connection_values (connection, MHD_HEADER_KIND, iterar_encabezado,NULL);
+      MHD_get_connection_values (connection, MHD_HEADER_KIND, Headers_Interator,NULL);
       printf ("obteniendo json con información........\n");
       char * solicitud=jsonEscribir(cola->stringjson);
       if(strstr(solicitud, "str_error")==NULL){
@@ -658,22 +659,22 @@ int answer_to_connection (void *cls, struct MHD_Connection *connection, const ch
     }
   }
   else if (0 == strcmp (method, "POST") && !strncasecmp(url, "/escribir_archivo", 17)){
-    struct manejoColaJson *cola = NULL;
-    cola = (struct manejoColaJson*)*con_cls;
+    struct ColaJson *cola = NULL;
+    cola = (struct ColaJson*)*con_cls;
     if(cola == NULL) {
-      cola = malloc(sizeof(struct manejoColaJson));
+      cola = malloc(sizeof(struct ColaJson));
       cola->info = 0;
       *con_cls = cola;
       return MHD_YES;
     }
-    if(*upload_data_size != 0) {
-      cola->stringjson= malloc(*upload_data_size + 1);
-      strncpy(cola->stringjson, upload_data, *upload_data_size);
-      *upload_data_size = 0;
+    if(*loadate_size != 0) {
+      cola->stringjson= malloc(*loadate_size + 1);
+      strncpy(cola->stringjson, loadate, *loadate_size);
+      *loadate_size = 0;
       return MHD_YES;
     }else {
       printf ("\nNueva  %s solicitud en  %s con  version %s \n", method, url, version);
-      MHD_get_connection_values (connection, MHD_HEADER_KIND, iterar_encabezado,NULL);
+      MHD_get_connection_values (connection, MHD_HEADER_KIND, Headers_Interator,NULL);
       printf ("obteniendo json con información........\n");
       char * solicitud=jsonEscribir(cola->stringjson);
       if(strstr(solicitud, "str_error")==NULL){
@@ -695,7 +696,7 @@ int answer_to_connection (void *cls, struct MHD_Connection *connection, const ch
   }
   else{
         printf ("\nNueva  %s solicitud en  %s con  version %s \n", method, url, version);
-        MHD_get_connection_values (connection, MHD_HEADER_KIND, iterar_encabezado,NULL);
+        MHD_get_connection_values (connection, MHD_HEADER_KIND, Headers_Interator,NULL);
         char * resp="\"str_error\":\"ERROR 404 Not Found\"";
         sprintf(jsonresp,"{\"solicitud\": \"%s\", \n"
                    "\"status\": \" -1\", %s }",url,resp);
