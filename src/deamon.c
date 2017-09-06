@@ -15,10 +15,10 @@
 #include <arpa/inet.h>
 #include <sys/resource.h>
 #include <libudev.h>
-#include <mntent.h>
-#define BUFERLEN 1024 
+#include <mntent.h> 
 #define BUFF_DISP 100000
 #define QLEN 50 
+#define BUFLEN 1024
 
 #ifndef HOST_NAME_MAX 
 #define HOST_NAME_MAX 256 
@@ -86,6 +86,37 @@ const char* AddressDisp(const char *direccion_fisica){
 	return  "no se encuentra montado dicho dispositivo";
 }
 
+int escribir_archivo(char* direccion, char* nombre_archivo, int tamano, char* contenido){
+	printf("%s-%s\n",direccion,nombre_archivo );
+	char *resultado=malloc((strlen(direccion)+strlen(nombre_archivo)+1)* sizeof(char*));
+	  memset(resultado,0,strlen(direccion)+strlen(nombre_archivo)+1);
+	sprintf(resultado,"%s/%s", direccion,nombre_archivo);
+	printf("\n%s\n",resultado );
+    FILE* fichero;
+    fichero = fopen(resultado, "w");
+    if(fichero<=0){
+    	return 0;
+    }
+    fputs(contenido, fichero);
+    fclose(fichero);
+    return 1;
+}
+
+char* leer_archivo(char* direccion, char* nombre_archivo){
+	FILE *archivo;
+	int caracter;
+	char resultado[1000];
+	char* texto_final=NULL;
+	sprintf(resultado,"%s/%s", direccion,nombre_archivo);
+	archivo = fopen(resultado,"r");
+	if (archivo == NULL){
+            printf("\nError de apertura del archivo. \n\n");
+    }else{
+        while((caracter = fgetc(archivo)) != EOF) sprintf(texto_final,"%s%c",texto_final,caracter);
+	}
+    fclose(archivo);
+    return texto_final;
+}
 
 char* ListarDispAlmMasivo(struct udev* udev){
 
@@ -178,9 +209,45 @@ char* Disp(char *direccion_fisica){
 	endmntent(fp);
 	return  "no se encuentra montado dicho dispositivo";
 }
+char* tokenizarescribir(char* solicitud){
+	char* lista[6];
+   const char delimitadores[2] = "|";
+   char *token;
+   token = strtok(solicitud, delimitadores);
+   int i=0;
+   while( token != NULL ) {
+	   lista[i]=token;
+	   printf("%d:%s\n",i,token );
+	   i++;
+	 token = strtok(NULL, delimitadores);
+   }
+   escribir_archivo(lista[5],lista[0],atoi(lista[1]),lista[3]);
+   char *concat_str = malloc(BUFLEN* sizeof(char*));
+   sprintf(concat_str, "{\"solicitud\":\"%s\", \"nombre\":\" %s\",\"nombre_archivo\":\"%s\",",lista[2],lista[4],lista[0]); 
+   return concat_str;
+}
+
+char* tokenizarleer(char* solicitud){
+	char* lista[6];
+    const char delimitadores[2] = "|";
+	char *token;
+	char *file;
+    token = strtok(solicitud, delimitadores);
+    int i=0;
+    while( token != NULL ) {
+	   lista[i]=token;
+	   printf("%d:%s\n",i,token );
+	   i++;
+	   token = strtok(NULL, delimitadores);
+    }
+    file=leer_archivo(lista[0],lista[1]);
+    char *concat_str = malloc(BUFLEN* sizeof(char*));
+    sprintf(concat_str, "{\"solicitud\":\"%s\", \"nombre\":\" %s\",\"nombre_archivo\":\"%s\",\"contenido\":\"%s\"",lista[2],lista[4],lista[0],file); 
+    return concat_str;
+}
 
 void ListenRequestClient(){ 
-	int  n,i,puerto = 8888;
+	int  n,puerto = 8888;
 	char *host; 
 	if (( n = sysconf(_SC_HOST_NAME_MAX)) < 0) n = HOST_NAME_MAX; /* best guess */ 
 	if ((host = malloc(n)) == NULL) printf(" malloc error"); 
@@ -205,8 +272,8 @@ void ListenRequestClient(){
 			close(clienteFd);
 			continue;
 		} 
-	    char *solicitud = malloc(BUFERLEN*sizeof(char *));
-		recv(clienteFd, solicitud, BUFERLEN, 0);
+	    char *solicitud = malloc(BUFLEN*sizeof(char *));
+		recv(clienteFd, solicitud, BUFLEN, 0);
 	  	//tratamiento tipo de solicitud
 	  	if ((strstr(solicitud, "GET") != NULL) && (strstr(solicitud, "listar_dispositivos") != NULL)) {
   			//solicitud : GET - listar_dispositivo
@@ -215,32 +282,19 @@ void ListenRequestClient(){
 			char* lista=ListarDispAlmMasivo(udeva);
 		    send(clienteFd,lista,strlen(lista),0);
 		    close(clienteFd);
-		}else if((strstr(solicitud, "obtenerdireccion") != NULL) ) {
-			char * respx=malloc(BUFERLEN*sizeof(char *));
-			int z=0,j=0;
-			printf("%lu \n",strlen(solicitud));
-			for(i=0;i<strlen(solicitud);i++){
-				if(solicitud[i]=='-' && i==0){
-					i++;
-					while(solicitud[i]!='-'){
-						printf("%c\n",solicitud[i]);
-						respx[j]=solicitud[i];
-						i++;
-						j++;
-					}
-					z++;
-				}
-			}
-			respx[j] = '\0';
-			printf("sdc%svdvdv\n",respx);
-			respx=Disp(solicitud);
-			send(clienteFd,respx,strlen(respx),0);
-		    close(clienteFd);
+		}else if((strstr(solicitud, "escribir") != NULL) ){
+			char* cadenaLarga=malloc(BUFF_DISP*sizeof(char *));
+			 memset(cadenaLarga,0,BUFF_DISP);
+			recv(clienteFd, cadenaLarga,BUFF_DISP, 0);
+			char* respuesta=malloc(BUFLEN*sizeof(char *));
+			 memset(respuesta,0,BUFLEN);
+			respuesta=tokenizarescribir(cadenaLarga);
+			send(clienteFd,respuesta,BUFLEN,0);
+			close(clienteFd);
+		}
 		}
 		close(clienteFd);
-			
-		
-	}
+	
 }
 
 

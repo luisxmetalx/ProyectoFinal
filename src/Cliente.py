@@ -50,14 +50,12 @@ if len(sys.argv) == 2:
                 url="http://127.0.0.1:"+str(sys.argv[1])+"/escribir_archivo"
                 nombre=input("Ingrese el nombre del dispositivo: ")
                 dirfile=input("Ingrese la direccion del archivo a escribir: ")
-                rutabase="/media/"+getpass.getuser()+"/"+nombre
-                print(rutabase)
                 archivo = open(dirfile)
                 contenido=""
                 for linea in archivo:
                     contenido=contenido+linea
                 archivo.close()
-                jsons={"solicitud":"escribir_archivo","nombre": nombre,"nombre_archivo":dirfile,"tamano_contenido":len(contenido),"contenido":contenido,"ruta",rutabase}
+                jsons={"solicitud":"escribir_archivo","nombre": nombre,"nombre_archivo":dirfile,"tamano_contenido":len(contenido),"contenido":contenido}
                 print(url)
                 r=requests.post(url,json=jsons)
                 dic=r.json()
